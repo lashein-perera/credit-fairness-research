@@ -1,0 +1,49 @@
+# ---- Data: NEVER commit datasets ----
+data/*
+!data/README.md
+!data/.gitkeep
+*.csv
+*.parquet
+*.feather
+*.zip
+*.7z
+!results/*.csv
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.so
+.Python
+venv/
+env/
+.venv/
+*.egg-info/
+.ipynb_checkpoints/
+.pytest_cache/
+.mypy_cache/
+
+# ---- Models / artifacts ----
+*.pkl
+*.joblib
+*.h5
+*.pt
+models_trained/
+
+# ---- Java / Maven ----
+target/
+*.class
+*.jar
+!.mvn/wrapper/maven-wrapper.jar
+.mvn/
+
+# ---- IDE ----
+.idea/
+.vscode/
+*.iml
+*.swp
+.DS_Store
+
+# ---- Secrets ----
+.env
+*.key
+credentials.json
