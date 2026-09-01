@@ -1,0 +1,5 @@
+ablation,auc_mean,auc_std,dp_diff_mean,dp_diff_std,di_ratio_mean,di_ratio_std,eo_diff_mean,eo_diff_std,probe_auc_after_mean,probe_auc_after_std,n_treated_mean,n_treated_std
+full,0.674,0.0262,0.0382,0.0145,0.9594,0.0151,0.1528,0.0814,0.5882,0.0564,116.0,0.0
+random,0.6913,0.0201,0.0833,0.022,0.9142,0.0217,0.2158,0.1125,0.5899,0.041,116.0,0.0
+single_pass,0.711,0.0213,0.084,0.0199,0.913,0.0198,0.2545,0.0919,0.8288,0.0266,15.0,0.0
+suppression,0.6554,0.0259,0.0269,0.0161,0.9713,0.0168,0.1386,0.0763,0.5608,0.0483,66.0,12.2474
