@@ -1,0 +1,6 @@
+attribute,candidate,criterion,passed,evidence
+CODE_GENDER,C1_guard99,a_probe_drop_ge_0.15,False,0.0665 >= 0.15
+CODE_GENDER,C1_guard99,b_dp_and_eo_below_baseline,False,"DP -0.0024, EO +0.0141"
+CODE_GENDER,C1_guard99,c_auc_drop_le_0.02,True,0.0158 <= 0.02
+CODE_GENDER,C1_guard99,d_zero_manufactured_proxies,False,17 emerged
+CODE_GENDER,C1_guard99,e_max_and_total_leak_below_baseline,True,"max -0.01893, total -0.00563"

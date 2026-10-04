@@ -1,0 +1,6 @@
+attribute,candidate,criterion,passed,evidence
+REGION_RATING_CLIENT,C1_guard99,a_probe_drop_ge_0.15,False,0.0590 >= 0.15
+REGION_RATING_CLIENT,C1_guard99,b_dp_and_eo_below_baseline,True,"DP -0.0094, EO -0.0039"
+REGION_RATING_CLIENT,C1_guard99,c_auc_drop_le_0.02,True,0.0160 <= 0.02
+REGION_RATING_CLIENT,C1_guard99,d_zero_manufactured_proxies,False,15 emerged
+REGION_RATING_CLIENT,C1_guard99,e_max_and_total_leak_below_baseline,False,"max +0.00018, total +0.00650"

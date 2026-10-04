@@ -1,0 +1,11 @@
+dataset,attribute,method,condition,auc_mean,auc_std,ks_mean,ks_std,brier_mean,brier_std,dp_diff_mean,dp_diff_std,di_ratio_mean,di_ratio_std,eo_diff_mean,eo_diff_std,eopp_diff_mean,eopp_diff_std,probe_auc_after_mean,probe_auc_after_std,applicability
+home_credit,CODE_GENDER,adversarial_debiasing,training_only,0.6134,0.0257,0.2036,0.0387,0.0996,0.0013,0.0523,0.016,0.9453,0.0162,0.1255,0.0525,0.1242,0.0547,0.7397,0.0254,applicable
+home_credit,CODE_GENDER,disparate_impact_remover,training_only,0.714,0.0235,0.3473,0.0432,0.0706,0.0015,0.0289,0.0221,0.9691,0.0234,0.0708,0.0538,0.069,0.0553,0.7397,0.0254,requires A at inference (train/serve skew)
+home_credit,CODE_GENDER,none,training_only,0.7086,0.0242,0.3388,0.04,0.0707,0.0014,0.0307,0.0167,0.967,0.0178,0.0671,0.0513,0.0654,0.0527,0.7397,0.0254,applicable
+home_credit,CODE_GENDER,reject_option,training_only,0.7086,0.0242,0.3388,0.04,0.0707,0.0014,0.0307,0.0167,0.967,0.0178,0.0671,0.0513,0.0654,0.0527,0.7397,0.0254,requires A at inference
+home_credit,CODE_GENDER,reweighing,training_only,0.7109,0.0233,0.3403,0.042,0.0707,0.0018,0.0226,0.0147,0.9757,0.0157,0.066,0.0468,0.0639,0.0489,0.7397,0.0254,applicable
+home_credit,REGION_RATING_CLIENT,adversarial_debiasing,training_only,0.6665,0.0239,0.284,0.0357,0.1538,0.0034,0.1527,0.0132,0.8469,0.0132,0.3717,0.0809,0.3717,0.0809,0.8337,0.0285,applicable
+home_credit,REGION_RATING_CLIENT,disparate_impact_remover,training_only,0.7119,0.0207,0.3389,0.0308,0.0708,0.0015,0.0928,0.0215,0.9048,0.0211,0.2448,0.0895,0.2434,0.0924,0.8337,0.0285,requires A at inference (train/serve skew)
+home_credit,REGION_RATING_CLIENT,none,training_only,0.7086,0.0242,0.3388,0.04,0.0707,0.0014,0.0941,0.0223,0.9033,0.0225,0.3074,0.1028,0.3074,0.1028,0.8337,0.0285,applicable
+home_credit,REGION_RATING_CLIENT,reject_option,training_only,0.7086,0.0242,0.3388,0.04,0.0707,0.0014,0.0941,0.0223,0.9033,0.0225,0.3074,0.1028,0.3074,0.1028,0.8337,0.0285,requires A at inference
+home_credit,REGION_RATING_CLIENT,reweighing,training_only,0.7036,0.0226,0.3264,0.0366,0.0706,0.0015,0.0835,0.0206,0.9136,0.0207,0.2598,0.0946,0.2573,0.0997,0.8337,0.0285,applicable
