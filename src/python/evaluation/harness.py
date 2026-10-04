@@ -60,9 +60,16 @@ def _probe(X: pd.DataFrame, a: pd.Series) -> float:
         return float("nan")
 
 
+# ITERATION 2: the configuration chosen on the validation split, registered so
+# it can be evaluated under the same folds and subsample as every other method.
+PROXY_AWARE_V2 = dict(skip_dominant_share=0.99, max_accuracy_loss=0.02)
+
+
 def _make(method: str, model_kind: str):
     if method == "proxy_aware":
         return ProxyAwareMitigator(model_kind=model_kind)
+    if method == "proxy_aware_v2":
+        return ProxyAwareMitigator(model_kind=model_kind, **PROXY_AWARE_V2)
     return build_mitigator(method, model_kind=model_kind)
 
 
@@ -94,10 +101,21 @@ def run_fold(X, y, A, train_idx, test_idx, method: str, condition: str,
 
     # The proposed method uses the attribute at FIT time by design; the
     # established methods are denied it under the latent condition.
-    if method == "proxy_aware":
+    #
+    # ITERATION 2 adds 'training_only': every method receives the attribute at
+    # fitting and none receives it at inference. That is exactly the access the
+    # proposed method has always had, so 'latent' compared a method holding the
+    # attribute against four holding nothing. Under this condition reweighing
+    # and adversarial debiasing are fully functional, since neither consults the
+    # attribute when scoring; reject-option is inert because it adjusts
+    # decisions at inference, and disparate impact remover scores raw features
+    # with a model fitted on repaired ones.
+    if method.startswith("proxy_aware"):
+        fit_A = Atr
+    elif condition in ("explicit", "training_only"):
         fit_A = Atr
     else:
-        fit_A = Atr if condition == "explicit" else None
+        fit_A = None
 
     m = _make(method, model_kind)
     with warnings.catch_warnings():
@@ -105,7 +123,8 @@ def run_fold(X, y, A, train_idx, test_idx, method: str, condition: str,
         m.fit(Xtr, ytr, fit_A)
         # attribute at inference: only the explicit condition may use it,
         # and never for the proposed method
-        infer_A = Ate if (condition == "explicit" and method != "proxy_aware") else None
+        infer_A = (Ate if (condition == "explicit"
+                           and not method.startswith("proxy_aware")) else None)
         proba = m.predict_proba(Xte, infer_A)
 
     thr = resolve_threshold(proba, ytr, threshold)
@@ -113,7 +132,8 @@ def run_fold(X, y, A, train_idx, test_idx, method: str, condition: str,
 
     leak = np.nan
     if measure_leakage:
-        Xte_t = m.transform(Xte) if hasattr(m, "transform") and method == "proxy_aware" else Xte
+        Xte_t = (m.transform(Xte) if hasattr(m, "transform")
+                 and method.startswith("proxy_aware") else Xte)
         leak = _probe(Xte_t, Ate)
 
     return {
@@ -159,7 +179,7 @@ def run_grid(X, y, A, attribute: str, dataset: str,
             for cond in conditions:
                 # the proposed method is attribute-free at inference, so the
                 # explicit/latent distinction does not apply to it
-                if method == "proxy_aware" and cond == "explicit":
+                if method.startswith("proxy_aware") and cond == "explicit":
                     continue
                 r = run_fold(X, y, A, tr, te, method, cond,
                              model_kind=model_kind, threshold=threshold)

@@ -59,6 +59,41 @@ def _numeric_view(col: pd.Series) -> tuple[pd.Series, dict | None]:
     return codes.map(mapping).astype(float), mapping
 
 
+def degenerate_features(X: pd.DataFrame, max_dominant_share: float | None = None,
+                        min_unique: int | None = None) -> list[str]:
+    """Features the conditional repair must not touch. ITERATION 2.
+
+    Iteration 1 treated every selected feature regardless of its distribution,
+    and that is where the method manufactured proxies. Percentile-mapping a
+    feature within strata of a PREDICTED attribute presupposes the feature has
+    a distribution worth repairing. A near-constant column does not: almost all
+    of its mass sits on one value, so the percentile a row receives is decided
+    by which stratum it fell in rather than by its own value, and the mapping
+    writes stratum identity — the predicted attribute — into the column.
+
+    FLAG_CONT_MOBILE is the canonical case: 99.8% constant, two distinct values
+    and no measurable leakage before treatment, 30-41 distinct values and the
+    largest residual leakage of any feature after it.
+
+    Thresholds are calibrated so that no known proxy is excluded: the lowest
+    dominant-value share among features that genuinely carry the attribute is
+    NAME_EDUCATION_TYPE at 0.71, well clear of a 0.99 cut.
+    """
+    out = []
+    for c in X.columns:
+        v = X[c].dropna()
+        if v.empty:
+            out.append(c)
+            continue
+        if min_unique is not None and v.nunique() < min_unique:
+            out.append(c)
+            continue
+        if (max_dominant_share is not None
+                and v.value_counts(normalize=True).iloc[0] > max_dominant_share):
+            out.append(c)
+    return out
+
+
 # ==========================================================================
 # decorrelation strategies
 # ==========================================================================
@@ -82,8 +117,9 @@ class _ConditionalRepair:
     incoming batch, so a single applicant can be transformed in isolation.
     """
 
-    def __init__(self, n_bins: int = 4):
+    def __init__(self, n_bins: int = 4, repair_level: float = 1.0):
         self.n_bins = n_bins
+        self.repair_level = repair_level
         self.grid_ = np.linspace(0, 1, 101)
         self.attr_model_ = None
         self.prep_ = None
@@ -155,7 +191,13 @@ class _ConditionalRepair:
                 pct = np.searchsorted(sv, v, side="left") / max(len(sv) - 1, 1)
                 new[i] = np.interp(np.clip(pct, 0, 1), self.grid_,
                                    self.targets_[f])
-            out[f] = new
+            # ITERATION 2: partial repair. A full remap discards the feature's
+            # own values entirely and replaces them with positions in a pooled
+            # target distribution, which is what lets stratum information in.
+            # Blending back the original limits how far any single pass can
+            # move a value, and the effect still compounds across iterations.
+            lam = self.repair_level
+            out[f] = new if lam >= 1.0 else (1.0 - lam) * col + lam * new
         return out
 
 
@@ -298,6 +340,16 @@ class ProxyAwareMitigator(Mitigator):
                       leakage rank. THE ABLATION CONTROL — if this performs
                       as well as targeting, the method's claimed mechanism
                       is false.
+
+    ITERATION 2 additions. All default to iteration-1 behaviour, so the frozen
+    results remain reproducible from this module.
+
+    skip_dominant_share  exclude features whose most common value covers more
+                         than this share of rows. None disables the guard.
+    skip_min_unique      exclude features with fewer than this many distinct
+                         values. None disables the guard.
+    repair_level         1.0 is the full remap of iteration 1; below 1.0 the
+                         repaired value is blended with the original.
     """
 
     name = "proxy_aware"
@@ -306,7 +358,10 @@ class ProxyAwareMitigator(Mitigator):
     def __init__(self, model_kind: str = "gbm", top_k: int = 15,
                  tau: float = 0.55, max_accuracy_loss: float = 0.08,
                  strategy: str = "conditional_repair", max_iter: int = 10,
-                 random_features: bool = False):
+                 random_features: bool = False,
+                 skip_dominant_share: float | None = None,
+                 skip_min_unique: int | None = None,
+                 repair_level: float = 1.0):
         super().__init__(model_kind)
         self.top_k = top_k
         self.tau = tau
@@ -314,6 +369,10 @@ class ProxyAwareMitigator(Mitigator):
         self.strategy = strategy
         self.max_iter = max_iter
         self.random_features = random_features
+        self.skip_dominant_share = skip_dominant_share
+        self.skip_min_unique = skip_min_unique
+        self.repair_level = repair_level
+        self.skipped_ = []
         self.history_ = []
         self.treated_ = []
         self.transformers_ = []
@@ -339,8 +398,13 @@ class ProxyAwareMitigator(Mitigator):
         return float(roc_auc_score(yte, m.predict_proba(Xte)[:, 1]))
 
     def _rank_features(self, X, a, exclude) -> list[str]:
-        """Rank untreated numeric features by leakage contribution."""
-        candidates = [c for c in X.columns if c not in exclude]
+        """Rank untreated numeric features by leakage contribution.
+
+        Degenerate features are excluded before ranking rather than after, so
+        that a skipped feature does not consume one of the top_k slots.
+        """
+        blocked = set(exclude) | set(self.skipped_)
+        candidates = [c for c in X.columns if c not in blocked]
         if not candidates:
             return []
 
@@ -374,6 +438,8 @@ class ProxyAwareMitigator(Mitigator):
             return self._fit_plain(X, y)
 
         a = pd.Series(A).reset_index(drop=True)
+        self.skipped_ = degenerate_features(X, self.skip_dominant_share,
+                                            self.skip_min_unique)
         baseline_auc = self._model_auc(X, y)
         leakage = self._probe_auc(X, a)
 
@@ -397,7 +463,9 @@ class ProxyAwareMitigator(Mitigator):
             # drives it toward chance.
             self.treated_ = list(dict.fromkeys(self.treated_ + picks))
 
-            tf = STRATEGIES[self.strategy]()
+            tf = (STRATEGIES[self.strategy](repair_level=self.repair_level)
+                  if self.strategy == "conditional_repair"
+                  else STRATEGIES[self.strategy]())
             tf.fit(Xc, a, self.treated_)
             Xn = tf.transform(Xc, self.treated_)
 
