@@ -190,16 +190,33 @@ class AdversarialDebiasing(Mitigator):
 
     Implemented directly rather than through a deep-learning framework: the
     mechanism is the projection step, which is preserved exactly here.
+
+    GRADIENT SCALING
+    The predictor update subtracts the adversary's gradient after projecting
+    its component out of the predictor's own gradient. Subtracting it at a
+    fixed weight, with no regard to the relative magnitude of the two
+    gradients, lets the adversary term dominate whenever it is the larger:
+    the predictor then never fits the outcome. Measured on Home Credit, that
+    cost roughly 0.10 AUC, far more than the model family (0.006) or the step
+    count (0.002), and left the method scoring worse WITH the protected
+    attribute than without it.
+
+    `scale_adversary` rescales the adversary term to the norm of the
+    predictor gradient, so neither side dominates by accident. This plays the
+    role Zhang et al.'s annealing schedule plays in the original. Set it to
+    False to reproduce the frozen iteration-1 and iteration-2 results.
     """
 
     name = "adversarial_debiasing"
 
     def __init__(self, model_kind: str = "gbm", epochs: int = 120,
-                 lr: float = 0.05, adversary_weight: float = 1.0):
+                 lr: float = 0.05, adversary_weight: float = 1.0,
+                 scale_adversary: bool = True):
         super().__init__(model_kind)
         self.epochs = epochs
         self.lr = lr
         self.adversary_weight = adversary_weight
+        self.scale_adversary = scale_adversary
 
     @staticmethod
     def _sigmoid(z):
@@ -240,7 +257,10 @@ class AdversarialDebiasing(Mitigator):
             # project out the adversary direction, then subtract it
             norm = np.linalg.norm(g_adv) + 1e-12
             proj = (g_pred @ g_adv) / (norm ** 2) * g_adv
-            g = g_pred - proj - self.adversary_weight * g_adv
+            # rescale so the adversary term cannot swamp the predictor's own
+            # gradient; without this the predictor never fits the outcome
+            scale = (np.linalg.norm(g_pred) / norm) if self.scale_adversary else 1.0
+            g = g_pred - proj - self.adversary_weight * scale * g_adv
 
             w -= self.lr * g
 

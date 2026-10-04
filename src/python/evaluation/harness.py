@@ -70,6 +70,13 @@ def _make(method: str, model_kind: str):
         return ProxyAwareMitigator(model_kind=model_kind)
     if method == "proxy_aware_v2":
         return ProxyAwareMitigator(model_kind=model_kind, **PROXY_AWARE_V2)
+    if method.startswith("proxy_aware_b"):
+        # trade-off sweep: the chosen guard, varying only the accuracy budget.
+        # 'none' removes the budget rather than setting it to zero.
+        tok = method[len("proxy_aware_b"):]
+        kw = dict(PROXY_AWARE_V2)
+        kw["max_accuracy_loss"] = 1e9 if tok == "none" else float(tok)
+        return ProxyAwareMitigator(model_kind=model_kind, **kw)
     return build_mitigator(method, model_kind=model_kind)
 
 

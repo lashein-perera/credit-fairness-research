@@ -5,9 +5,9 @@ CODE_GENDER,none,latent,0.7086,0.0307,0.967,0.0671,0.7397,
 CODE_GENDER,reweighing,explicit,0.7109,0.0226,0.9757,0.066,0.7397,
 CODE_GENDER,reweighing,training_only,0.7109,0.0226,0.9757,0.066,0.7397,
 CODE_GENDER,reweighing,latent,0.7086,0.0307,0.967,0.0671,0.7397,
-CODE_GENDER,adversarial_debiasing,explicit,0.6134,0.0523,0.9453,0.1255,0.7397,
-CODE_GENDER,adversarial_debiasing,training_only,0.6134,0.0523,0.9453,0.1255,0.7397,
-CODE_GENDER,adversarial_debiasing,latent,0.7086,0.0307,0.967,0.0671,0.7397,
+CODE_GENDER,adversarial_debiasing,explicit,0.6769,0.029,0.9693,0.0906,0.7397,CORRECTED: adversary gradient scaled
+CODE_GENDER,adversarial_debiasing,training_only,0.6769,0.029,0.9693,0.0906,0.7397,CORRECTED: adversary gradient scaled
+CODE_GENDER,adversarial_debiasing,latent,0.7086,0.0307,0.967,0.0671,0.7397,CORRECTED: adversary gradient scaled
 CODE_GENDER,disparate_impact_remover,explicit,0.714,0.0289,0.9691,0.0708,0.7397,
 CODE_GENDER,disparate_impact_remover,training_only,0.714,0.0289,0.9691,0.0708,0.7397,n/a - needs A at inference (skew)
 CODE_GENDER,disparate_impact_remover,latent,0.7086,0.0307,0.967,0.0671,0.7397,
@@ -24,9 +24,9 @@ REGION_RATING_CLIENT,none,latent,0.7086,0.0941,0.9033,0.3074,0.8337,
 REGION_RATING_CLIENT,reweighing,explicit,0.7036,0.0835,0.9136,0.2598,0.8337,
 REGION_RATING_CLIENT,reweighing,training_only,0.7036,0.0835,0.9136,0.2598,0.8337,
 REGION_RATING_CLIENT,reweighing,latent,0.7086,0.0941,0.9033,0.3074,0.8337,
-REGION_RATING_CLIENT,adversarial_debiasing,explicit,0.6665,0.1527,0.8469,0.3717,0.8337,
-REGION_RATING_CLIENT,adversarial_debiasing,training_only,0.6665,0.1527,0.8469,0.3717,0.8337,
-REGION_RATING_CLIENT,adversarial_debiasing,latent,0.7086,0.0941,0.9033,0.3074,0.8337,
+REGION_RATING_CLIENT,adversarial_debiasing,explicit,0.6828,0.1481,0.8515,0.3528,0.8337,CORRECTED: adversary gradient scaled
+REGION_RATING_CLIENT,adversarial_debiasing,training_only,0.6828,0.1481,0.8515,0.3528,0.8337,CORRECTED: adversary gradient scaled
+REGION_RATING_CLIENT,adversarial_debiasing,latent,0.7086,0.0941,0.9033,0.3074,0.8337,CORRECTED: adversary gradient scaled
 REGION_RATING_CLIENT,disparate_impact_remover,explicit,0.7119,0.0928,0.9048,0.2448,0.8337,
 REGION_RATING_CLIENT,disparate_impact_remover,training_only,0.7119,0.0928,0.9048,0.2448,0.8337,n/a - needs A at inference (skew)
 REGION_RATING_CLIENT,disparate_impact_remover,latent,0.7086,0.0941,0.9033,0.3074,0.8337,
