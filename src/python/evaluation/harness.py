@@ -34,7 +34,7 @@ from evaluation.metrics import (demographic_parity_difference,
                                 equalized_odds_difference, auc_roc,
                                 brier_score, ks_statistic)
 from mitigation.bank import build as build_mitigator
-from mitigation.proxy_aware import ProxyAwareMitigator
+from mitigation.proxy_aware import ProxyAwareMitigator, ProxyAwareReweighed
 from models.baselines import build_preprocessor
 
 RANDOM_STATE = 42
@@ -70,6 +70,12 @@ def _make(method: str, model_kind: str):
         return ProxyAwareMitigator(model_kind=model_kind)
     if method == "proxy_aware_v2":
         return ProxyAwareMitigator(model_kind=model_kind, **PROXY_AWARE_V2)
+    # ITERATION 3: repair followed by reweighing, unguarded (iteration-1
+    # settings) and guarded (the iteration-2 configuration)
+    if method == "proxy_aware_rw_unguarded":
+        return ProxyAwareReweighed(model_kind=model_kind)
+    if method == "proxy_aware_rw_guarded":
+        return ProxyAwareReweighed(model_kind=model_kind, **PROXY_AWARE_V2)
     if method.startswith("proxy_aware_b"):
         # trade-off sweep: the chosen guard, varying only the accuracy budget.
         # 'none' removes the budget rather than setting it to zero.

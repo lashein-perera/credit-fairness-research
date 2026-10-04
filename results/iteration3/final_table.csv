@@ -1,0 +1,11 @@
+attribute,method,AUC,DP diff,DI ratio,EO diff,probe AUC
+CODE_GENDER,none,0.7086,0.0307,0.967,0.0671,0.7397
+CODE_GENDER,reweighing,0.7109,0.0226,0.9757,0.066,0.7397
+CODE_GENDER,proxy_aware full (iteration 1),0.6953,0.0147,0.9841,0.0825,0.5498
+CODE_GENDER,proxy_aware guarded (iteration 2),0.7057,0.0238,0.9744,0.0705,0.6723
+CODE_GENDER,"repair + reweighing, D1 (iteration 3)",0.6929,0.0153,0.9835,0.0763,0.5498
+REGION_RATING_CLIENT,none,0.7086,0.0941,0.9033,0.3074,0.8337
+REGION_RATING_CLIENT,reweighing,0.7036,0.0835,0.9136,0.2598,0.8337
+REGION_RATING_CLIENT,proxy_aware full (iteration 1),0.674,0.0382,0.9594,0.1528,0.5882
+REGION_RATING_CLIENT,proxy_aware guarded (iteration 2),0.7045,0.0829,0.914,0.2362,0.7678
+REGION_RATING_CLIENT,"repair + reweighing, D2 (iteration 3)",0.6966,0.0691,0.928,0.2092,0.7678

@@ -37,7 +37,7 @@ from sklearn.linear_model import LinearRegression, LogisticRegression
 from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import train_test_split
 
-from mitigation.bank import Mitigator
+from mitigation.bank import Mitigator, Reweighing
 from models.baselines import build_model, build_preprocessor
 
 RANDOM_STATE = 42
@@ -504,3 +504,42 @@ class ProxyAwareMitigator(Mitigator):
 
     def history_frame(self) -> pd.DataFrame:
         return pd.DataFrame(self.history_)
+
+
+# ==========================================================================
+class ProxyAwareReweighed(ProxyAwareMitigator):
+    """ITERATION 3: proxy-aware feature repair followed by reweighing.
+
+    The two components address different defects. Repair is the only method in
+    the bank that reduces proxy leakage, since it is the only one that changes
+    the features; reweighing is the only one that improved gender equalised
+    odds under equal access, since it rebalances (group, outcome) combinations
+    in the training data. Repair alone regressed gender equalised odds.
+
+    The hypothesis is that they compose: repair the features exactly as the
+    parent class does, then train the final model on the repaired features
+    with Kamiran-Calders weights. The weighting is delegated to the bank's own
+    Reweighing class rather than re-implemented, so "reweighing" here is
+    precisely the established method, applied to different inputs.
+
+    The attribute is used at fitting only. Repair needs it to locate and treat
+    leaky features; reweighing needs it to compute the weights. Neither the
+    transformation nor the weighted model consults it at inference.
+    """
+
+    name = "proxy_aware_reweighed"
+
+    def fit(self, X: pd.DataFrame, y, A=None):
+        super().fit(X, y, A)
+        if A is None or self.fell_back_:
+            return self
+
+        X = X.reset_index(drop=True)
+        Xr = self.transform(X)
+        rw = Reweighing(model_kind=self.model_kind)
+        rw.fit(Xr, pd.Series(y).reset_index(drop=True),
+               pd.Series(A).reset_index(drop=True))
+        self.model_ = rw.model_
+        self.weights_ = rw.weights_
+        return self
+

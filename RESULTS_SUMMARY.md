@@ -1,9 +1,10 @@
-# Results Summary — Artefact v2
+# Results Summary — Artefact v3
 
 Detecting and Mitigating Proxy Discrimination in Alternative-Data Credit Scoring
 for Thin-File Borrowers.
 
-Covers the frozen iteration-1 artefact and the iteration-2 design cycle. Every
+Covers the frozen iteration-1 artefact and the iteration-2 and iteration-3
+design cycles. Every
 number here is reproducible from the committed CSVs under `results/`.
 
 ## Contents
@@ -12,9 +13,10 @@ number here is reproducible from the committed CSVs under `results/`.
 2. [Combined comparison](#2-combined-comparison)
 3. [Accuracy-budget trade-off](#3-accuracy-budget-trade-off)
 4. [Iteration 2 candidate selection and criteria](#4-iteration-2-candidate-selection-and-criteria)
-5. [Benchmark datasets](#5-benchmark-datasets)
-6. [Known defects](#6-known-defects)
-7. [Protocol notes](#7-protocol-notes)
+5. [Iteration 3: repair plus reweighing](#5-iteration-3-repair-plus-reweighing)
+6. [Benchmark datasets](#6-benchmark-datasets)
+7. [Known defects](#7-known-defects)
+8. [Protocol notes](#8-protocol-notes)
 
 ---
 
@@ -66,7 +68,7 @@ protected attribute from the features the model scores.
 | disparate_impact_remover | explicit | 0.714 | 0.0289 | 0.9691 | 0.0708 | 0.7397 |  |
 | disparate_impact_remover | training_only | 0.714 | 0.0289 | 0.9691 | 0.0708 | 0.7397 | n/a - needs A at inference (skew) |
 | disparate_impact_remover | latent | 0.7086 | 0.0307 | 0.967 | 0.0671 | 0.7397 |  |
-| reject_option | explicit | 0.7086 | 0.0307 | 0.967 | 0.0671 | 0.7397 |  |
+| reject_option | explicit | 0.7085 | 0.0334 | 0.9639 | 0.0742 | 0.7397 | CORRECTED: band centred on operating threshold |
 | reject_option | training_only | 0.7086 | 0.0307 | 0.967 | 0.0671 | 0.7397 | n/a - needs A at inference |
 | reject_option | latent | 0.7086 | 0.0307 | 0.967 | 0.0671 | 0.7397 |  |
 | proxy_aware | training_only | 0.6953 | 0.0147 | 0.9841 | 0.0825 | 0.5498 | A at fit only - identical to latent by construction |
@@ -90,7 +92,7 @@ protected attribute from the features the model scores.
 | disparate_impact_remover | explicit | 0.7119 | 0.0928 | 0.9048 | 0.2448 | 0.8337 |  |
 | disparate_impact_remover | training_only | 0.7119 | 0.0928 | 0.9048 | 0.2448 | 0.8337 | n/a - needs A at inference (skew) |
 | disparate_impact_remover | latent | 0.7086 | 0.0941 | 0.9033 | 0.3074 | 0.8337 |  |
-| reject_option | explicit | 0.7086 | 0.0941 | 0.9033 | 0.3074 | 0.8337 |  |
+| reject_option | explicit | 0.706 | 0.0465 | 0.9513 | 0.1398 | 0.8337 | CORRECTED: band centred on operating threshold |
 | reject_option | training_only | 0.7086 | 0.0941 | 0.9033 | 0.3074 | 0.8337 | n/a - needs A at inference |
 | reject_option | latent | 0.7086 | 0.0941 | 0.9033 | 0.3074 | 0.8337 |  |
 | proxy_aware | training_only | 0.674 | 0.0382 | 0.9594 | 0.1528 | 0.5882 | A at fit only - identical to latent by construction |
@@ -109,7 +111,14 @@ protected attribute from the features the model scores.
   training-only access it beats the proposed method on equalised odds and
   accuracy for gender. It cannot reduce leakage at all.
 - **Two methods cannot be read as performance under `training_only`** — see
-  [Known defects](#6-known-defects).
+  [Known defects](#7-known-defects).
+- **Two rows are corrected re-runs.** Adversarial debiasing (all conditions) and
+  reject-option (explicit) were defective as originally shipped; the tables show
+  corrected numbers and [Known defects](#7-known-defects) keeps the originals.
+- **Corrected reject-option is strong on region when it has the attribute at
+  inference** — EO 0.3074 -> 0.1398, better than the proposed method's 0.1528 —
+  and slightly harmful on gender. It remains inapplicable without the attribute
+  at scoring time, which is the deployment condition this research addresses.
 
 ---
 
@@ -161,7 +170,8 @@ sweep itself).
   every setting but the most restrictive). Emergence is not a function of how far
   the repair iterates.
 
-Figures: `results/iteration2/figures/tradeoff_*.png`.
+Figures: `results/iteration2/figures/tradeoff_*.png` — labelled scatter points,
+with the unguarded iteration-1 mitigator marked separately for comparison.
 
 ---
 
@@ -231,7 +241,119 @@ by this mechanism**, which is a finding rather than a failure to conceal.
 
 ---
 
-## 5. Benchmark datasets
+## 5. Iteration 3: repair plus reweighing
+
+**Hypothesis.** Proxy-aware repair is the only method that reduces leakage;
+reweighing is the only one that improved gender equalised odds under equal
+access. Repair alone regressed gender EO (0.0671 -> 0.0825). Repairing the
+features and then training on them with Kamiran-Calders weights should keep the
+leakage and DP gains while repairing that regression.
+
+**Candidates** (no others): D1 = unguarded repair (iteration-1 settings) +
+reweighing; D2 = guarded repair (iteration-2 C1_guard99) + reweighing. The
+weighting delegates to the bank's own `Reweighing` class, so it is the
+established method applied to repaired features. Training-only access.
+
+**Selection, fixed before running.** Validation rows are disjoint from the
+8,000 evaluation rows: a different subsample, filtered by row hash (347
+overlapping rows removed). 5-fold CV on that pool. Per attribute, the candidate
+passing more of (i)-(iv) wins; ties go to lower EO, then lower probe AUC.
+
+### CODE_GENDER — validation
+
+| candidate | criteria passed | AUC | DP diff | EO diff | probe AUC |
+|---|---|---|---|---|---|
+| [ref] none |  | 0.681 | 0.0212 | 0.0612 | 0.7098 |
+| [ref] reweighing |  | 0.6863 | 0.0099 | 0.0582 | 0.7098 |
+| D1 | 4/4 | 0.6746 | 0.0094 | 0.0333 | 0.5157 |
+| D2 | 3/4 | 0.6727 | 0.0096 | 0.069 | 0.6414 |
+
+### REGION_RATING_CLIENT — validation
+
+| candidate | criteria passed | AUC | DP diff | EO diff | probe AUC |
+|---|---|---|---|---|---|
+| [ref] none |  | 0.681 | 0.0913 | 0.2082 | 0.8097 |
+| [ref] reweighing |  | 0.6787 | 0.0732 | 0.2 | 0.8097 |
+| D2 | 4/4 | 0.669 | 0.0559 | 0.1301 | 0.7429 |
+| D1 | 4/4 | 0.6554 | 0.049 | 0.1832 | 0.5845 |
+
+D1 chosen for gender (4/4 vs 3/4). Region tied at 4/4; D2 chosen on lower EO.
+
+**Final evaluation** — chosen configuration run once, 25 folds at 8,000 rows,
+against the existing reference rows measured under the same protocol.
+
+### CODE_GENDER
+
+| method | AUC | DP diff | DI ratio | EO diff | probe AUC |
+|---|---|---|---|---|---|
+| none | 0.7086 | 0.0307 | 0.967 | 0.0671 | 0.7397 |
+| reweighing | 0.7109 | 0.0226 | 0.9757 | 0.066 | 0.7397 |
+| proxy_aware full (iteration 1) | 0.6953 | 0.0147 | 0.9841 | 0.0825 | 0.5498 |
+| proxy_aware guarded (iteration 2) | 0.7057 | 0.0238 | 0.9744 | 0.0705 | 0.6723 |
+| repair + reweighing, D1 (iteration 3) | 0.6929 | 0.0153 | 0.9835 | 0.0763 | 0.5498 |
+
+### REGION_RATING_CLIENT
+
+| method | AUC | DP diff | DI ratio | EO diff | probe AUC |
+|---|---|---|---|---|---|
+| none | 0.7086 | 0.0941 | 0.9033 | 0.3074 | 0.8337 |
+| reweighing | 0.7036 | 0.0835 | 0.9136 | 0.2598 | 0.8337 |
+| proxy_aware full (iteration 1) | 0.674 | 0.0382 | 0.9594 | 0.1528 | 0.5882 |
+| proxy_aware guarded (iteration 2) | 0.7045 | 0.0829 | 0.914 | 0.2362 | 0.7678 |
+| repair + reweighing, D2 (iteration 3) | 0.6966 | 0.0691 | 0.928 | 0.2092 | 0.7678 |
+
+### Success criteria (fixed in advance)
+
+### CODE_GENDER — chosen `D1`
+
+| criterion | passed | evidence |
+|---|---|---|
+| i_eo_no_worse_than_none | FAIL | EO 0.0763 vs none 0.0671 |
+| ii_dp_below_reweighing | PASS | DP 0.0153 vs reweighing 0.0226 |
+| iii_probe_below_reweighing | PASS | probe 0.5498 vs reweighing 0.7397 |
+| iv_auc_within_0.035 | PASS | AUC gap 0.0157 (limit 0.035) |
+
+### REGION_RATING_CLIENT — chosen `D2`
+
+| criterion | passed | evidence |
+|---|---|---|
+| i_eo_no_worse_than_none | PASS | EO 0.2092 vs none 0.3074 |
+| ii_dp_below_reweighing | PASS | DP 0.0691 vs reweighing 0.0835 |
+| iii_probe_below_reweighing | PASS | probe 0.7678 vs reweighing 0.8337 |
+| iv_auc_within_0.035 | PASS | AUC gap 0.0120 (limit 0.035) |
+
+### Verdict: the hypothesis is not supported
+
+- **Gender fails exactly the criterion the hypothesis targeted.** Reweighing
+  moved EO from 0.0825 to 0.0763 — a real improvement — but it stays worse than
+  unmitigated (0.0671). The regression is reduced, not repaired.
+- **The validation result did not replicate.** On validation, D1 reached gender
+  EO 0.0333 against an unmitigated 0.0612 and passed all four criteria. On the
+  evaluation set it fails (i). One 8,000-row pool over five folds was not enough
+  to estimate a gender EO difference of this size reliably.
+- **Region's 4/4 is not evidence for the combination.** The iteration-1
+  mitigator **alone** also passes all four region criteria (EO 0.1528, DP 0.0382,
+  probe 0.5882, AUC gap 0.0346 — just inside the 0.035 limit) and beats D2 on
+  every fairness metric. The
+  criteria compare against reweighing and no mitigation, not against repair
+  alone, so they cannot attribute a pass to the combination. D2's only advantage
+  over iteration 1 on region is accuracy (0.6966 vs 0.6740).
+- **D1's probe AUC equals iteration 1's exactly** (0.5498 gender) — expected,
+  since reweighing changes weights, not features. A useful sanity check that the
+  composition behaves as designed.
+
+- **Across both attributes, the combination's pass/fail profile is identical to
+  repair alone.** Iteration 1 by itself scores 3/4 on gender, failing the same EO
+  criterion, and 4/4 on region. Iteration 3 changed the magnitudes, not a single
+  verdict.
+
+**What iteration 3 does establish:** reweighing composes with repair without
+undoing its leakage reduction, and it partially offsets repair's EO cost on
+gender. It does not deliver the fix it was designed for.
+
+---
+
+## 6. Benchmark datasets
 
 Explicit and latent conditions, 5x2 folds.
 
@@ -283,9 +405,9 @@ this section covers.
 
 ---
 
-## 6. Known defects
+## 7. Known defects
 
-### 6.1 Manufactured proxies — unresolved
+### 7.1 Manufactured proxies — unresolved
 
 The conditional repair **creates** proxies in features that had none. It
 percentile-maps each feature within strata of a *predicted* attribute; a feature
@@ -314,7 +436,7 @@ Recorded per feature per arm in `mitigation_transitions.csv` and
 `iteration2/transitions_*.csv` via `leakage_emerged`, `n_unique_before`,
 `n_unique_after`.
 
-### 6.2 Disparate impact remover — train/serve skew
+### 7.2 Disparate impact remover — train/serve skew
 
 `DisparateImpactRemover.predict_proba` ignores `A` and scores **raw** features,
 while the model was fitted on **repaired** features. That is a defect in this
@@ -322,7 +444,7 @@ implementation, not a property of Feldman et al.'s method, and it depresses the
 method's numbers under every condition. Its `training_only` row is marked
 not-applicable for this reason.
 
-### 6.3 Adversarial debiasing — corrected in iteration 2
+### 7.3 Adversarial debiasing — corrected in iteration 2
 
 The shipped predictor update subtracted the adversary's gradient at a fixed
 weight with no regard to the predictor gradient's magnitude, so the adversary
@@ -359,7 +481,7 @@ annealing schedule plays in the original. One setting, no hyperparameter search.
 Corrected numbers are in the combined tables above. The method remains weak:
 still worse than no mitigation on gender EO and on both region fairness metrics.
 
-### 6.4 Module 5 import hang — environment, workaround in place
+### 7.4 Module 5 import hang — environment, workaround in place
 
 `from explain.shap_layer import ...` stalls indefinitely on the development
 machine. The module is healthy — a brand-new module imports in 0.00 s and this
@@ -373,7 +495,13 @@ its source, which bypasses the stalled path and produces identical objects.
 `run_explainability.py` and `run_mitigation_explainability.py` still use the
 normal import and will not run on that machine until it is resolved.
 
-### 6.5 Dead configuration constants
+The same machine intermittently failed `git status` with `mmap failed:
+Operation canceled` during iteration 3, succeeding on retry. No repository file
+was found to be evicted or dataless. Both symptoms point to local filesystem
+instability rather than to anything in the repository; the artefact was pushed
+to `origin` so that a copy exists off this machine.
+
+### 7.5 Dead configuration constants
 
 `config.py` declares `DEFAULT_TOP_K = 5`, `DEFAULT_TAU = 0.55` and
 `DEFAULT_MAX_ACCURACY_LOSS = 0.02`. These are **never imported anywhere** and
@@ -381,7 +509,7 @@ disagree with the class defaults the experiments actually used (`top_k=15`,
 `max_accuracy_loss=0.08`). Iteration 2 adopted `max_accuracy_loss=0.02`
 explicitly, matching the declared-but-unused value.
 
-### 6.6 Targeting is inoperative at the default configuration
+### 7.6 Targeting is inoperative at the default configuration
 
 At `top_k=15, max_iter=10`, cumulative selection exhausts all 116 features before
 the leakage target is met, so the `full` and `random` ablation arms treat the
@@ -390,9 +518,50 @@ same set and differ only in order. `results/ablation.csv` records
 targeted from random selection; only `single_pass` (15 features) and `top_k=5`
 (50 features) are genuinely targeted, and both underperform random selection.
 
+### 7.7 Reject-option classification — corrected in iteration 3
+
+In the explicit condition the method returned results identical to no
+mitigation on every metric, to four decimals, on both attributes — although it
+receives the attribute at inference and should change decisions.
+
+**Cause: the band was centred on the wrong threshold.** Kamiran, Karim & Zhang
+(2012) define the critical region as a band around the classifier's decision
+boundary. The implementation hard-coded that centre at 0.5. On Home Credit,
+with a default rate of about 8%, only about 1% of applicants score above 0.5,
+while the evaluation decides at the base-rate quantile — about 0.18. The band
+([0.45, 0.55] on gender) therefore sat entirely among applicants already
+rejected and moved each from one rejected score to another: **zero decisions
+changed** on a held-out split, on either attribute. Group advantage was also
+read off approval rates at 0.5, where both groups are about 99% approved.
+
+`harness.resolve_threshold`'s own docstring records exactly why 0.5 is
+degenerate on this data; the reject-option class had not adopted that rule.
+
+**Fix:** centre the band on the base-rate quantile of the training scores — the
+same rule the harness decides with. Band grid, search and objective unchanged.
+With it, 38 (gender) and 36 (region) decisions change on the same split.
+`RejectOptionClassification(align_threshold=False)` reproduces the originals.
+
+| attribute | version | AUC | DP diff | DI ratio | EO diff |
+|---|---|---|---|---|---|
+| CODE_GENDER | original | 0.7086 | 0.0307 | 0.967 | 0.0671 |
+| CODE_GENDER | corrected | 0.7085 | 0.0334 | 0.9639 | 0.0742 |
+| REGION_RATING_CLIENT | original | 0.7086 | 0.0941 | 0.9033 | 0.3074 |
+| REGION_RATING_CLIENT | corrected | 0.706 | 0.0465 | 0.9513 | 0.1398 |
+
+The corrected method is **strong on region** (EO and DP both roughly halved)
+and **mildly harmful on gender** (DP and EO both worse): the band is chosen to
+minimise disparity on training data, and where baseline disparity is small it
+can overshoot on test. Its training-only and latent rows are unchanged — without
+the attribute at inference it cannot act.
+
+**Not re-run:** the German Credit and Default of Credit Card Clients benchmark
+rows for reject-option were produced before this fix and remain the defective
+numbers.
+
 ---
 
-## 7. Protocol notes
+## 8. Protocol notes
 
 **Result sets use different protocols and their baselines legitimately differ.**
 

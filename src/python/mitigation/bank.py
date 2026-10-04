@@ -285,18 +285,35 @@ class RejectOptionClassification(Mitigator):
     from the advantaged group the unfavourable one, on the reasoning that
     decisions the model is least certain about are where bias does most work
     and where correction costs least accuracy.
+
+    THRESHOLD ALIGNMENT
+    The critical region is a band around the classifier's DECISION BOUNDARY.
+    The original implementation centred it on a fixed 0.5. On Home Credit,
+    where the default rate is about 8%, roughly 1% of applicants score above
+    0.5, while the evaluation decides at the base-rate quantile (about 0.18).
+    The band therefore sat entirely among applicants already rejected, moved
+    them from one rejected score to another, and changed no decision: every
+    metric came out identical to no mitigation. Group advantage was also read
+    off approval rates at 0.5, where both groups are about 99% approved.
+
+    `align_threshold` centres the band on the base-rate quantile of the
+    training scores, the same rule harness.resolve_threshold uses to decide.
+    The band grid and the search are unchanged. Set it to False to reproduce
+    the frozen results.
     """
 
     name = "reject_option"
 
     def __init__(self, model_kind: str = "gbm", band: float | None = None,
-                 threshold: float = 0.5):
+                 threshold: float = 0.5, align_threshold: bool = True):
         super().__init__(model_kind)
         self.band = band              # None => selected by search during fit
         self.threshold = threshold
+        self.align_threshold = align_threshold
+        self.threshold_ = threshold
 
     def _dpd(self, proba, a):
-        approved = pd.Series(proba < self.threshold).astype(int)
+        approved = pd.Series(proba < self.threshold_).astype(int)
         a = pd.Series(a).reset_index(drop=True)
         r = [approved[(a == g).values].mean() for g in a.unique()]
         return max(r) - min(r)
@@ -310,7 +327,10 @@ class RejectOptionClassification(Mitigator):
         a = pd.Series(A).reset_index(drop=True).astype(str)
         proba = self.model_.predict_proba(X)[:, 1]
 
-        rates = {g: float((proba[(a == g).values] < self.threshold).mean())
+        self.threshold_ = (float(np.quantile(proba, 1.0 - float(np.mean(y))))
+                           if self.align_threshold else self.threshold)
+
+        rates = {g: float((proba[(a == g).values] < self.threshold_).mean())
                  for g in a.unique()}
         self.disadvantaged_ = min(rates, key=rates.get)
         self.advantaged_ = max(rates, key=rates.get)
@@ -333,11 +353,11 @@ class RejectOptionClassification(Mitigator):
 
     def _apply_band(self, proba, a):
         out = proba.copy()
-        in_band = np.abs(proba - self.threshold) <= self.band_
+        in_band = np.abs(proba - self.threshold_) <= self.band_
         fav = in_band & (a == self.disadvantaged_).values
         unf = in_band & (a == self.advantaged_).values
-        out[fav] = self.threshold - self.band_ - 1e-3
-        out[unf] = self.threshold + self.band_ + 1e-3
+        out[fav] = self.threshold_ - self.band_ - 1e-3
+        out[unf] = self.threshold_ + self.band_ + 1e-3
         return out
 
     def predict_proba(self, X, A=None):

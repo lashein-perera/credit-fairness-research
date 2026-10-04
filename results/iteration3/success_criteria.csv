@@ -1,0 +1,9 @@
+attribute,candidate,criterion,passed,evidence
+CODE_GENDER,D1,i_eo_no_worse_than_none,False,EO 0.0763 vs none 0.0671
+CODE_GENDER,D1,ii_dp_below_reweighing,True,DP 0.0153 vs reweighing 0.0226
+CODE_GENDER,D1,iii_probe_below_reweighing,True,probe 0.5498 vs reweighing 0.7397
+CODE_GENDER,D1,iv_auc_within_0.035,True,AUC gap 0.0157 (limit 0.035)
+REGION_RATING_CLIENT,D2,i_eo_no_worse_than_none,True,EO 0.2092 vs none 0.3074
+REGION_RATING_CLIENT,D2,ii_dp_below_reweighing,True,DP 0.0691 vs reweighing 0.0835
+REGION_RATING_CLIENT,D2,iii_probe_below_reweighing,True,probe 0.7678 vs reweighing 0.8337
+REGION_RATING_CLIENT,D2,iv_auc_within_0.035,True,AUC gap 0.0120 (limit 0.035)
