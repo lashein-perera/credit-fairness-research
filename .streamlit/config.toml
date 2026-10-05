@@ -1,0 +1,13 @@
+[server]
+# the project lives in an iCloud-synced folder; polling it for edits is not needed
+fileWatcherType = "none"
+
+[browser]
+gatherUsageStats = false
+
+[theme]
+base = "light"
+
+[client]
+# hide the developer menu and Deploy button from compliance users
+toolbarMode = "minimal"

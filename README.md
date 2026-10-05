@@ -82,6 +82,28 @@ Run the tests:
 pytest tests/
 ```
 
+## Dashboard
+
+A Streamlit interface for running an audit without writing code. It is a user interface only: every number comes from the frozen modules under `src/python/` (tag `artefact-v3-final`), called through `app/engine.py`.
+
+```bash
+streamlit run app/dashboard.py
+```
+
+The browser opens at <http://localhost:8501>. Work through the five screens in the sidebar:
+
+| Screen | What it does |
+|---|---|
+| 1 · Load data | Pick Home Credit, German Credit or UCI Default, or upload a CSV; choose the outcome column and the protected attribute; sample ~5,000 rows |
+| 2 · Leakage audit | Probe AUC with the shuffled-attribute control, and a bar chart of the most revealing features |
+| 3 · Explain | Leakage vs SHAP cross-plot, and the features that are both leaky and relied upon |
+| 4 · Mitigate | Proxy-aware mitigator in full or guarded mode: before/after AUC, DP diff, DI ratio, EO diff and probe AUC, plus any manufactured proxies |
+| 5 · Report | Download a plain-language audit report (Markdown) |
+
+**Demo mode** — the sidebar toggle, or <http://localhost:8501/?demo=1> — shows the precomputed dissertation results from `results/` instantly. Nothing is loaded or trained, so it cannot stall, and it works without the datasets downloaded. Add `&attr=REGION_RATING_CLIENT` or `&mode=full` to open on a particular attribute or mitigation mode.
+
+Live runs take about 5–20 s per step at 5,000 rows on an Apple-silicon laptop; results are cached, so revisiting a screen or re-running with the same settings is instant. Screenshots of each screen are in [`docs/screenshots/`](docs/screenshots/).
+
 ## Datasets
 
 | Dataset | Role |
