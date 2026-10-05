@@ -355,8 +355,9 @@ def manufactured(transitions: pd.DataFrame) -> pd.DataFrame:
 # ==========================================================================
 DEMO_ATTRIBUTES = ["CODE_GENDER", "REGION_RATING_CLIENT"]
 DEMO_SOURCE = {
-    "audit": "results/leakage_table.csv, results/leaky_features_full.csv "
-             "(50,000-row Home Credit sample)",
+    "audit": "probe AUCs from results/leakage_table.csv (50,000-row Home "
+             "Credit sample); feature ranking from "
+             "results/leaky_features_full.csv (20,000-row explainability run)",
     "explain": "results/mitigation_cross_analysis.csv, baseline arm "
                "(held-out 15,000 rows of the 50,000-row sample)",
     "mitigate": "results/iteration3/final_table.csv (mean of 25 folds, 8,000 "
