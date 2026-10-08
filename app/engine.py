@@ -1,7 +1,7 @@
 """Computation layer behind the dashboard.
 
 Every number the dashboard shows is produced here, by calling the frozen
-modules (artefact-v3-final) unchanged. Nothing in this file re-implements a
+modules (artefact-v4-final) unchanged. Nothing in this file re-implements a
 measurement: the probe, the leakage ranking, SHAP, the quadrant cut-points,
 the mitigator and the fairness metrics are the same functions the experiments
 used. This file only sequences them on a small subsample, and reads the
@@ -11,10 +11,13 @@ Kept free of Streamlit so it can be exercised from a plain Python session.
 """
 from __future__ import annotations
 
+import io
+import json
 import sys
 import time
 import types
 import warnings
+import zipfile
 from datetime import date
 from pathlib import Path
 
@@ -109,6 +112,25 @@ GLOSSARY = {
                     "in the number of distinct values is the tell-tale sign.",
     "full": "Iteration-1 mitigator: repairs the 15 leakiest features per "
             "round, up to 10 rounds, and tolerates up to 0.08 AUC loss.",
+    "weak_probe": "Logistic regression on a single 70/30 split: the check the "
+                  "mitigator itself works against. It only sees straight-line "
+                  "patterns.",
+    "strong_probe": "Gradient boosting with 5-fold cross-validation, as in the "
+                    "leakage audit. It can combine features in flexible ways.",
+    "probe_gap": "The weak probe only spots simple straight-line patterns, which "
+                 "is exactly what the repair is tuned to remove, while the strong "
+                 "probe can combine features flexibly and so still finds much of "
+                 "the information the repair merely disguised.",
+    "risk_score": "The model's estimated chance that this applicant defaults. "
+                  "Applicants at or above the decision threshold are declined.",
+    "threshold": "The cut-off that declines the same share of applicants as "
+                 "actually defaulted in the training data, the rule used "
+                 "throughout the evaluation.",
+    "push": "How much this feature pushed the applicant's risk up (+) or down "
+            "(−), in the model's internal log-odds units (SHAP value).",
+    "lender": "Fairness of the decisions in your uploaded column, measured "
+              "against the protected attribute and the actual outcomes. These "
+              "are your model's decisions, not this tool's.",
     "guarded": "Iteration-2 mitigator: same repair, but skips near-constant "
                "features (one value in more than 99% of rows) and stops if "
                "AUC falls by more than 0.02.",
@@ -141,19 +163,57 @@ def builtin_attributes(key: str) -> list[str]:
 
 
 def prepare_upload(df: pd.DataFrame, target: str, positive_value, attribute: str,
-                   exclude: list[str], n_rows: int | None):
+                   exclude: list[str], n_rows: int | None,
+                   lender_col: str | None = None):
     """(X, y, A) from an uploaded table.
 
     `positive_value` is the target value that means default. The protected
     attribute, and any column the user marks as a near-duplicate of it or an
     identifier, is removed from X: the same isolation rule the loaders apply.
+
+    `lender_col` holds the lender's own score or decision. It is carried in A,
+    row-aligned through the subsample, and never enters X: it is an output of
+    the lender's model, not a feature.
     """
     df = df[df[attribute].notna() & df[target].notna()].reset_index(drop=True)
     y = (df[target].astype(str) == str(positive_value)).astype(int)
     A = df[[attribute]].astype(str)
-    drop = {target, attribute, *exclude}
+    if lender_col:
+        A[lender_col] = df[lender_col].values
+    drop = {target, attribute, *exclude} | ({lender_col} if lender_col else set())
     X = df.drop(columns=[c for c in drop if c in df.columns])
     return _subsample(X, y, A, n_rows)
+
+
+def lender_audit(y, a, decisions, kind: str, decline_value=None) -> dict:
+    """Group fairness of the lender's own decisions on the loaded rows.
+
+    kind="decision": rows equal to `decline_value` are declines.
+    kind="score":    higher means riskier; the same share is declined as
+                     actually defaulted, the threshold rule the evaluation uses.
+    """
+    y = pd.Series(y).reset_index(drop=True)
+    a = pd.Series(a).astype(str).reset_index(drop=True)
+    d = pd.Series(decisions).reset_index(drop=True)
+    if kind == "score":
+        s = pd.to_numeric(d, errors="coerce")
+        keep = s.notna()
+        thr = resolve_threshold(s[keep].values, y[keep].values, None)
+        declined = (s >= thr).astype(int)
+        rule = (f"Scores at or above {thr:.4g} counted as declined: the same share "
+                f"as actually defaulted ({y[keep].mean():.1%}).")
+    else:
+        keep = d.notna()
+        declined = (d.astype(str) == str(decline_value)).astype(int)
+        rule = f"Rows with the value '{decline_value}' counted as declined."
+    y, a, declined = (v[keep].reset_index(drop=True) for v in (y, a, declined))
+    groups = pd.DataFrame({"group": a, "approved": 1 - declined}).groupby("group").agg(
+        applicants=("approved", "size"), approval_rate=("approved", "mean")).reset_index()
+    return {"DP diff": demographic_parity_difference(declined, a),
+            "DI ratio": disparate_impact_ratio(declined, a),
+            "EO diff": equalized_odds_difference(y, declined, a),
+            "approval_rate": float(1 - declined.mean()), "n": int(keep.sum()),
+            "rule": rule, "groups": groups}
 
 
 def check_inputs(X, y, a) -> list[str]:
@@ -316,6 +376,10 @@ def mitigate(X, y, a, mode: str, before: pd.DataFrame, thresholds,
         progress("Re-measuring leakage and SHAP after mitigation", 0.70)
         imp = m5.global_importance(mit.model_, Xte_t, model_kind=MODEL_KIND)
         leak = rank_leaky_features(Xte_t, ate, top_k=Xte_t.shape[1])
+        progress("Measuring leakage with the strong probe", 0.88)
+        probes = _probe_table(row_before["probe AUC"], row_after["probe AUC"],
+                              probe_auc(Xte, ate, kind="gbm")["auc_mean"],
+                              probe_auc(Xte_t, ate, kind="gbm")["auc_mean"])
     after = m5.leakage_vs_shap(leak, imp, thresholds=thresholds)
 
     nuq_before = {c: int(Xte[c].nunique(dropna=False)) for c in Xte.columns}
@@ -333,7 +397,139 @@ def mitigate(X, y, a, mode: str, before: pd.DataFrame, thresholds,
             "budget_stop": any(h.get("rejected") for h in mit.history_),
             "danger_before": int((before["quadrant"] == "leaky_and_relied_on").sum()),
             "danger_after": int((after["quadrant"] == "leaky_and_relied_on").sum()),
+            "probes": probes, "probes_source": None,
+            "live": _bundle(base, mit, Xte, Xte_t, ytr, yte), "mitigator": mit,
             "source": "live", "runtime_s": time.time() - t0}
+
+
+def _probe_table(weak_before, weak_after, strong_before, strong_after) -> pd.DataFrame:
+    return pd.DataFrame([
+        {"probe": "Weak: logistic regression", "before": weak_before, "after": weak_after},
+        {"probe": "Strong: gradient boosting", "before": strong_before, "after": strong_after}])
+
+
+def _bundle(base, mit, Xte, Xte_t, ytr, yte) -> dict:
+    """What the borrower view needs: both models, both feature views, decisions."""
+    pb = base.predict_proba(Xte)[:, 1]
+    pa = mit.model_.predict_proba(Xte_t)[:, 1]
+    return {"base": base, "mit_model": mit.model_, "Xte": Xte, "Xte_t": Xte_t,
+            "yte": yte, "proba_before": pb, "proba_after": pa,
+            "thr_before": resolve_threshold(pb, ytr, None),
+            "thr_after": resolve_threshold(pa, ytr, None)}
+
+
+# ==========================================================================
+# borrower view
+# ==========================================================================
+def _plain(v):
+    """A JSON- and display-friendly scalar."""
+    if v is None or (isinstance(v, float) and np.isnan(v)):
+        return None
+    if isinstance(v, (np.floating, float)):
+        return round(float(v), 4)
+    if isinstance(v, (np.integer, int)):
+        return int(v)
+    return str(v)
+
+
+def borrower_index(bundle: dict) -> pd.DataFrame:
+    """One line per held-out applicant, for the picker."""
+    pb, pa = bundle["proba_before"], bundle["proba_after"]
+    db = np.where(pb >= bundle["thr_before"], "declined", "approved")
+    da = np.where(pa >= bundle["thr_after"], "declined", "approved")
+    return pd.DataFrame({"applicant": np.arange(len(pb)), "before": db, "after": da,
+                         "changed": db != da})
+
+
+def borrower(bundle: dict, i: int, top: int = 6) -> dict:
+    """One applicant: scores, decisions, threshold, drivers, values before and after."""
+    xb = bundle["Xte"].iloc[[i]]
+    xa = bundle["Xte_t"].iloc[[i]]
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        vb, names, _ = m5.shap_matrix(bundle["base"], xb, model_kind=MODEL_KIND)
+        va, names_a, _ = m5.shap_matrix(bundle["mit_model"], xa, model_kind=MODEL_KIND)
+    pushes_b = dict(zip(names, vb[0]))
+    pushes_a = dict(zip(names_a, va[0]))
+
+    def drivers(pushes, frame):
+        order = sorted(pushes, key=lambda f: abs(pushes[f]), reverse=True)[:top]
+        return [{"feature": f, "value": _plain(frame.iloc[0][f]),
+                 "push": round(float(pushes[f]), 4)} for f in order]
+
+    before = drivers(pushes_b, xb)
+    after = drivers(pushes_a, xa)
+    key = list(dict.fromkeys([d["feature"] for d in before] + [d["feature"] for d in after]))
+    values = [{"feature": f, "value before repair": _plain(xb.iloc[0][f]),
+               "value after repair": _plain(xa.iloc[0][f])} for f in key]
+
+    def side(p, thr):
+        return {"risk_score": round(float(p), 4), "threshold": round(float(thr), 4),
+                "decision": "declined" if p >= thr else "approved"}
+
+    return {"applicant": int(i),
+            "actual_outcome": "defaulted" if int(bundle["yte"].iloc[i]) == 1 else "repaid",
+            "before": side(bundle["proba_before"][i], bundle["thr_before"]) | {"drivers": before},
+            "after": side(bundle["proba_after"][i], bundle["thr_after"]) | {"drivers": after},
+            "values": values}
+
+
+DEMO_BORROWERS = ROOT / "data" / "demo"
+
+
+def demo_borrowers(attribute: str) -> list[dict] | None:
+    """Stored example applicants, built locally by app/build_demo_borrowers.py.
+
+    Kept under data/ (not committed): they are rows of the Home Credit data,
+    which its licence does not allow to be redistributed.
+    """
+    path = DEMO_BORROWERS / f"borrowers_{attribute}.json"
+    return json.loads(path.read_text()) if path.exists() else None
+
+
+# ==========================================================================
+# repaired-data export
+# ==========================================================================
+EXPORT_NOTE = """REPAIRED LOAN DATA - read me first
+
+repaired_data.csv holds the loaded applicants with the revealing features
+repaired by the proxy-aware mitigator ({mode} mode), plus the outcome column
+outcome_default (1 = defaulted). The protected attribute ({attribute}) is not
+in the file and was used only while fitting the repair.
+
+How a lender would use it
+  Retrain your own credit model on these repaired features and the outcome,
+  instead of on the original features. To score a new applicant, the same
+  fitted repair must first be applied to their features; the repair is a
+  fitted transformation and is not contained in this file.
+
+What to keep in mind
+  - {n_treated} of {n_features} features were repaired. Numeric features keep
+    their units but their values are shifted; categories are replaced by
+    numeric codes. Missing values were filled before repair.
+  - The repair can create new proxies in features that had none
+    (see "Manufactured proxies" in the dashboard).
+  - A simple probe finds much less of {attribute} after repair, but a stronger
+    probe still recovers a large part of it. Re-audit the retrained model.
+  - Fitted on a {n_rows:,}-row sample in the dashboard, not the full data.
+"""
+
+
+def repaired_export(X: pd.DataFrame, y, mit, meta: dict, mode: str,
+                    n_treated: int) -> bytes:
+    """A zip of the repaired data and the explanatory note."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        Xr = mit.transform(X.reset_index(drop=True))
+    Xr = Xr.assign(outcome_default=pd.Series(y).reset_index(drop=True).values)
+    note = EXPORT_NOTE.format(mode=mode, attribute=meta["attribute"],
+                              n_treated=n_treated, n_features=X.shape[1],
+                              n_rows=len(X))
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("repaired_data.csv", Xr.to_csv(index=False))
+        z.writestr("README.txt", note)
+    return buf.getvalue()
 
 
 MANUFACTURED_LABELS = {"leakage_drop_before": "leakage before",
@@ -414,7 +610,17 @@ def demo_mitigate(attribute: str, mode: str) -> dict:
         n_treated, n_skipped = int(t["n_treated"]), int(t["n_skipped"])
         danger_before = int((tr.quadrant_before == "leaky_and_relied_on").sum())
         danger_after = int((tr.quadrant_after == "leaky_and_relied_on").sum())
+    probes, probes_source = None, None
+    if mode == "full":
+        sp = pd.read_csv(RESULTS / "iteration4" / "strong_probe.csv")
+        sp = sp[sp.attribute == attribute].set_index("features")
+        o, r = sp.loc["original"], sp.loc["repaired, iteration 1"]
+        probes = _probe_table(o.weak_probe, r.weak_probe,
+                              o.strong_probe_auc, r.strong_probe_auc)
+        probes_source = ("results/iteration4/strong_probe.csv (held-out 15,000 rows "
+                         "of the 50,000-row sample; both probes on the same rows)")
     return {"mode": mode, "table": table, "after": None,
+            "probes": probes, "probes_source": probes_source,
             "manufactured": manufactured(tr),
             "n_treated": n_treated, "n_skipped": n_skipped, "budget_stop": False,
             "danger_before": danger_before, "danger_after": danger_after,
@@ -436,11 +642,11 @@ def _md_table(df: pd.DataFrame, digits: int = 4) -> str:
 
 
 def build_report(meta: dict, audit_res: dict | None, explain_res: dict | None,
-                 mitigate_res: dict | None) -> str:
+                 mitigate_res: dict | None, lender_res: dict | None = None) -> str:
     """Plain-English audit report in Markdown."""
     L = ["# Proxy discrimination audit report", "",
          f"Generated {date.today().isoformat()} by the credit-fairness-research "
-         "dashboard (artefact-v3-final modules).", "",
+         "dashboard (artefact-v4-final modules).", "",
          "## Data", "",
          f"- **Dataset:** {meta['dataset']}",
          f"- **Rows analysed:** {meta['n_rows']:,}   **Features:** {meta['n_features']}",
@@ -449,6 +655,14 @@ def build_report(meta: dict, audit_res: dict | None, explain_res: dict | None,
          f"- **Mode:** {meta['mode']}", ""]
     if meta.get("source"):
         L += [f"Results were read from the committed experiment tables: {meta['source']}.", ""]
+
+    if lender_res:
+        L += ["## Your model's decisions", "",
+              f"> {GLOSSARY['lender']}", "",
+              f"{lender_res['rule']} Overall approval rate "
+              f"{lender_res['approval_rate']:.1%} across {lender_res['n']:,} applicants.", "",
+              _md_table(pd.DataFrame([{k: lender_res[k] for k in ("DP diff", "DI ratio", "EO diff")}])), "",
+              _md_table(lender_res["groups"].rename(columns={"approval_rate": "approval rate"})), ""]
 
     if audit_res:
         act, ctl = audit_res["actual"], audit_res["control"]
@@ -494,6 +708,12 @@ def build_report(meta: dict, audit_res: dict | None, explain_res: dict | None,
               "- DI ratio: " + GLOSSARY["di"],
               "- EO diff: " + GLOSSARY["eo"],
               "- probe AUC: " + GLOSSARY["probe_after"], ""]
+        if mitigate_res.get("probes") is not None:
+            L += ["### Leakage measured two ways", "",
+                  _md_table(mitigate_res["probes"]), "",
+                  GLOSSARY["probe_gap"], ""]
+            if mitigate_res.get("probes_source"):
+                L += [f"Source: {mitigate_res['probes_source']}.", ""]
         m = mitigate_res["manufactured"]
         L += ["### Manufactured proxies", "",
               f"{len(m)} features had no detectable leakage before mitigation and "
