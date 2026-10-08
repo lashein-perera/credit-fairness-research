@@ -34,7 +34,8 @@ from evaluation.metrics import (demographic_parity_difference,
                                 equalized_odds_difference, auc_roc,
                                 brier_score, ks_statistic)
 from mitigation.bank import build as build_mitigator
-from mitigation.proxy_aware import ProxyAwareMitigator, ProxyAwareReweighed
+from mitigation.proxy_aware import (ProxyAwareMitigator, ProxyAwareReweighed,
+                                    ProxyAwareRollback)
 from models.baselines import build_preprocessor
 
 RANDOM_STATE = 42
@@ -76,6 +77,9 @@ def _make(method: str, model_kind: str):
         return ProxyAwareReweighed(model_kind=model_kind)
     if method == "proxy_aware_rw_guarded":
         return ProxyAwareReweighed(model_kind=model_kind, **PROXY_AWARE_V2)
+    # ITERATION 4: iteration 1 plus one rollback pass for manufactured proxies
+    if method == "proxy_aware_rollback":
+        return ProxyAwareRollback(model_kind=model_kind)
     if method.startswith("proxy_aware_b"):
         # trade-off sweep: the chosen guard, varying only the accuracy budget.
         # 'none' removes the budget rather than setting it to zero.
@@ -149,7 +153,7 @@ def run_fold(X, y, A, train_idx, test_idx, method: str, condition: str,
                  and method.startswith("proxy_aware") else Xte)
         leak = _probe(Xte_t, Ate)
 
-    return {
+    row = {
         "method": method,
         "condition": condition,
         "auc": auc_roc(yte, proba),
@@ -164,6 +168,9 @@ def run_fold(X, y, A, train_idx, test_idx, method: str, condition: str,
         "fell_back": bool(getattr(m, "fell_back_", False)),
         "runtime_s": round(time.time() - t0, 2),
     }
+    # per-fit diagnostics, for mitigators that record them (iteration 4)
+    row.update(getattr(m, "diagnostics_", {}))
+    return row
 
 
 def run_grid(X, y, A, attribute: str, dataset: str,

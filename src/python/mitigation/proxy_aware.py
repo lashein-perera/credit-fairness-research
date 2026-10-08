@@ -37,6 +37,7 @@ from sklearn.linear_model import LinearRegression, LogisticRegression
 from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import train_test_split
 
+from leakage.probe import rank_leaky_features
 from mitigation.bank import Mitigator, Reweighing
 from models.baselines import build_model, build_preprocessor
 
@@ -541,5 +542,121 @@ class ProxyAwareReweighed(ProxyAwareMitigator):
                pd.Series(A).reset_index(drop=True))
         self.model_ = rw.model_
         self.weights_ = rw.weights_
+        return self
+
+
+# ==========================================================================
+class ProxyAwareRollback(ProxyAwareMitigator):
+    """ITERATION 4: repair, verify, roll back.
+
+    Fitting is exactly iteration 1 (full mode, accuracy budget 0.08), followed
+    by one verification step. A validation split is carved from the TRAINING
+    rows, and each feature's leakage is measured there before and after
+    repair with Module 1's per-feature ranking (gradient-boosting probe,
+    permutation importance). A treated feature at or below the noise floor
+    before repair and above it after is a manufactured proxy: its repair is
+    undone, so its original values are used both to train the final model and
+    when scoring. The noise floor is Module 5's leakage cut-point,
+    max(median leakage, k x median permutation sd), computed on the
+    before-repair ranking.
+
+    One rollback pass only. The validation split is then measured again and
+    any features still above the floor are recorded, not acted on.
+
+    The validation rows are a subset of the rows the repair was fitted on, so
+    the repair itself is identical to iteration 1 and rollback is the only
+    change. No test rows are used.
+    """
+
+    name = "proxy_aware_rollback"
+
+    def __init__(self, model_kind: str = "gbm", validation_size: float = 0.3,
+                 noise_k: float = 2.0, **kwargs):
+        super().__init__(model_kind=model_kind, **kwargs)
+        self.validation_size = validation_size
+        self.noise_k = noise_k
+        self.rolled_back_ = []
+        self.diagnostics_ = {}
+
+    def repaired(self, X: pd.DataFrame) -> pd.DataFrame:
+        """The iteration-1 transformation, before any rollback."""
+        return ProxyAwareMitigator.transform(self, X)
+
+    def transform(self, X: pd.DataFrame) -> pd.DataFrame:
+        Xc = self.repaired(X)
+        for f in self.rolled_back_:
+            Xc[f] = X[f]
+        return Xc
+
+    def _stop_reason(self) -> str:
+        if any(h.get("rejected") for h in self.history_):
+            return "accuracy budget"
+        if len(self.history_) - 1 >= self.max_iter:
+            # the tau check runs at the start of a round, so reaching tau in
+            # the last permitted round still ends on the round cap
+            return ("max rounds (probe reached tau in last round)"
+                    if self.final_leakage_ <= self.tau else "max rounds")
+        if self.final_leakage_ <= self.tau:
+            return "probe at or below tau"
+        return "no features to treat"
+
+    def fit(self, X: pd.DataFrame, y, A=None):
+        super().fit(X, y, A)
+        if A is None or self.fell_back_:
+            return self
+
+        rounds = len(self.history_) - 1
+        all_treated = [h["iteration"] for h in self.history_[1:]
+                       if not h.get("rejected")
+                       and len(h["treated"]) == X.shape[1]]
+        self.diagnostics_ = {
+            "stop_reason": self._stop_reason(),
+            "rounds": rounds,
+            "rounds_accepted": len(self.transformers_),
+            "all_features_treated_at_round": all_treated[0] if all_treated else np.nan,
+            "internal_probe_final": round(float(self.final_leakage_), 4),
+            "n_treated": len(self.treated_),
+        }
+
+        X = X.reset_index(drop=True)
+        a = pd.Series(A).reset_index(drop=True)
+        Xv, _, av, _ = train_test_split(X, a, train_size=self.validation_size,
+                                        stratify=a, random_state=RANDOM_STATE)
+        Xv, av = Xv.reset_index(drop=True), av.reset_index(drop=True)
+
+        def leak(Z):
+            r = rank_leaky_features(Z, av, top_k=Z.shape[1])
+            return r.set_index("feature")
+
+        before = leak(Xv)
+        floor = max(float(before["leakage_drop"].median()),
+                    self.noise_k * float(before["leakage_std"].median()))
+        after = leak(self.repaired(Xv))
+        emerged = [f for f in X.columns
+                   if before.at[f, "leakage_drop"] <= floor
+                   and after.at[f, "leakage_drop"] > floor]
+        self.rolled_back_ = [f for f in emerged if f in self.treated_]
+
+        still = []
+        if self.rolled_back_:
+            recheck = leak(self.transform(Xv))
+            still = [f for f in X.columns
+                     if before.at[f, "leakage_drop"] <= floor
+                     and recheck.at[f, "leakage_drop"] > floor]
+
+        self.unrolled_model_ = self.model_
+        Xr = self.transform(X)
+        self.model_ = build_model(self.model_kind, Xr)
+        self.model_.fit(Xr, pd.Series(y).reset_index(drop=True))
+
+        self.diagnostics_.update({
+            "validation_rows": len(Xv),
+            "noise_floor": floor,
+            "n_emerged_validation": len(emerged),
+            "n_rolled_back": len(self.rolled_back_),
+            "n_still_emerged_after_rollback": len(still),
+            "rolled_back": ";".join(self.rolled_back_),
+            "still_emerged": ";".join(still),
+        })
         return self
 

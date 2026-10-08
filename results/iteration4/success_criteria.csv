@@ -1,0 +1,9 @@
+attribute,criterion,passed,evidence
+CODE_GENDER,i_manufactured_proxies_halved,False,22 vs iteration 1 24 (limit 12)
+CODE_GENDER,ii_weak_probe_within_0.02,False,0.6517 (limit 0.570)
+CODE_GENDER,iii_dp_within_0.005,True,0.0188 (limit 0.020)
+CODE_GENDER,iv_auc_within_0.005,True,0.6992 (limit 0.690)
+REGION_RATING_CLIENT,i_manufactured_proxies_halved,False,19 vs iteration 1 23 (limit 11)
+REGION_RATING_CLIENT,ii_weak_probe_within_0.02,False,0.7268 (limit 0.608)
+REGION_RATING_CLIENT,iii_dp_within_0.005,False,0.0450 (limit 0.043)
+REGION_RATING_CLIENT,iv_auc_within_0.005,True,0.6781 (limit 0.669)
