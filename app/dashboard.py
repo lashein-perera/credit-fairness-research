@@ -3,7 +3,7 @@
     streamlit run app/dashboard.py
 
 A user interface only. Every measurement is made by app/engine.py, which calls
-the artefact-v3-final modules unchanged. Demo mode reads the committed
+the artefact-v4-final modules unchanged. Demo mode reads the committed
 results/ tables and computes nothing, so it cannot stall.
 
 URL parameters, used for the viva and for the Chapter 4 screenshots:
@@ -45,7 +45,7 @@ def _init_state():
                                       E.DEMO_ATTRIBUTES else E.DEMO_ATTRIBUTES[0])
     if "mode" not in st.session_state:
         st.session_state.mode = qp.get("mode") if qp.get("mode") in E.MODES else "guarded"
-    for k in ("data", "meta", "audit", "explain", "mitigate"):
+    for k in ("data", "meta", "audit", "explain", "mitigate", "lender"):
         st.session_state.setdefault(k, None)
 
 
@@ -230,8 +230,26 @@ def page_load():
         attr = c1.selectbox("Protected attribute", [c for c in cols if c != target],
                             help="Held out of the credit features and used for "
                                  "measurement only.")
+        lender = c2.selectbox("Your model's score or decision (optional)",
+                              ["(none)"] + [c for c in cols if c not in (target, attr)],
+                              help="A column holding your own credit model's output "
+                                   "for each applicant. It is never used as a "
+                                   "feature; the dashboard checks how fair those "
+                                   "decisions are.")
+        lender = None if lender == "(none)" else lender
+        lender_kind, decline = None, None
+        if lender:
+            lender_kind = c1.radio("That column holds", ["score", "decision"],
+                                   horizontal=True,
+                                   format_func={"score": "A risk score (higher = riskier)",
+                                                "decision": "A decision"}.get)
+            if lender_kind == "decision":
+                dvals = sorted(df[lender].dropna().astype(str).unique())[:50]
+                decline = c2.selectbox("Value meaning 'declined'", dvals,
+                                       help="Rows with this value count as declined; "
+                                            "all others as approved.")
         exclude = c2.multiselect("Columns to leave out",
-                                 [c for c in cols if c not in (target, attr)],
+                                 [c for c in cols if c not in (target, attr, lender)],
                                  help="Identifiers, and any near-duplicate of the "
                                       "protected attribute (e.g. a title that "
                                       "states gender), so the audit measures "
@@ -241,20 +259,24 @@ def page_load():
                                  help="A stratified random sample. About 5,000 "
                                       "rows keeps each step under a minute.")
         if st.button("Load data", type="primary"):
-            X, y, A = E.prepare_upload(df, target, positive, attr, exclude, int(n_rows))
+            X, y, A = E.prepare_upload(df, target, positive, attr, exclude, int(n_rows),
+                                       lender_col=lender)
             digest = hashlib.sha1(up.getvalue()).hexdigest()
             _set_data(X, y, A[attr], up.name, attr,
-                      ("upload", digest, target, positive, attr, tuple(exclude), int(n_rows)))
+                      ("upload", digest, target, positive, attr, tuple(exclude),
+                       int(n_rows), lender, lender_kind, decline),
+                      lender=(A[lender], lender_kind, decline) if lender else None)
     _show_loaded()
 
 
-def _set_data(X, y, a, name, attr, key):
+def _set_data(X, y, a, name, attr, key, lender=None):
     problems = E.check_inputs(X, y, a)
     if problems:
         for p in problems:
             st.error(p)
         return
     st.session_state.data = {"X": X, "y": y, "a": a, "key": key}
+    st.session_state.lender = E.lender_audit(y, a, *lender) if lender else None
     st.session_state.meta = {"dataset": name, "attribute": attr,
                              "n_rows": len(X), "n_features": X.shape[1],
                              "mode": "live (computed on a subsample)", "source": None}
@@ -279,7 +301,27 @@ def _show_loaded():
     left, right = st.columns([1, 3])
     left.dataframe(g.rename("applicants").to_frame(), width="stretch")
     right.dataframe(X.head(8), width="stretch", height=300)
+    _show_lender()
     st.page_link(PAGES[1], label="Next: 2 · Leakage audit", icon="➡️")
+
+
+def _show_lender():
+    lr = st.session_state.lender
+    if not lr:
+        return
+    st.subheader("Your model's decisions")
+    st.caption(G["lender"])
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Approval rate", f"{lr['approval_rate']:.1%}")
+    c2.metric("DP diff", f"{lr['DP diff']:.4f}", help=G["dp"])
+    c3.metric("DI ratio", f"{lr['DI ratio']:.4f}", help=G["di"])
+    c4.metric("EO diff", f"{lr['EO diff']:.4f}", help=G["eo"])
+    if lr["DI ratio"] < 0.8:
+        st.warning("Your model's decisions fail the four-fifths rule "
+                   f"(DI ratio {lr['DI ratio']:.2f}, below 0.80).")
+    st.caption(f"{lr['rule']} Measured on the {lr['n']:,} loaded applicants.")
+    st.dataframe(lr["groups"], hide_index=True, width="content", column_config={
+        "approval_rate": st.column_config.NumberColumn("approval rate", format="%.3f")})
 
 
 # --------------------------------------------------------------------------
@@ -475,6 +517,23 @@ def page_mitigate():
                 + ("The first repair round cost more accuracy than this mode "
                    "allows, and was rolled back." if res["budget_stop"] else
                    "Leakage was already below the mitigator's target."))
+    st.subheader("Leakage measured two ways")
+    pr = res.get("probes")
+    if pr is None:
+        st.info("The strong-probe measurement is stored for full mode only "
+                "(results/iteration4/strong_probe.csv). Choose full mode, or run "
+                "guarded mode live.")
+    else:
+        for col, (_, r) in zip(st.columns(2), pr.iterrows()):
+            col.metric(r.probe, f"{r.after:.3f}",
+                       delta=f"{r.after - r.before:+.3f} from {r.before:.3f}",
+                       delta_color="inverse",
+                       help=G["weak_probe"] if r.probe.startswith("Weak") else G["strong_probe"])
+        st.caption(G["probe_gap"])
+        if res.get("probes_source"):
+            st.caption(f"Precomputed: {res['probes_source']}. The weak-probe values "
+                       "therefore differ slightly from the 25-fold table above.")
+
     c1, c2, c3 = st.columns(3)
     c1.metric("Features repaired", res["n_treated"])
     c2.metric("Skipped by the guard", res["n_skipped"],
@@ -499,12 +558,111 @@ def page_mitigate():
     else:
         st.success("No feature gained leakage from below the noise floor.")
 
+    st.subheader("Download the repaired data")
+    if st.session_state.demo:
+        st.info("Available in live mode. Demo mode holds stored results only, "
+                "not applicant data.")
+        return
+    d = st.session_state.data
+    key = d["key"] + (mode,)
+    if st.button("Prepare repaired data") or ("export", key) in _store():
+        with st.spinner("Applying the repair to every loaded applicant…"):
+            data = _cached("export", key, lambda: E.repaired_export(
+                d["X"], d["y"], res["mitigator"], meta, mode, res["n_treated"]))
+        st.download_button("Download repaired data (.zip)", data, type="primary",
+                           file_name=f"repaired_{meta['attribute']}_{mode}.zip",
+                           mime="application/zip")
+    st.caption("A zip of the loaded applicants with the revealing features repaired "
+               "(the protected attribute removed), and a note explaining that a "
+               "lender would retrain its own credit model on it.")
+
 
 # --------------------------------------------------------------------------
-# 5. report
+# 5. borrower view
+# --------------------------------------------------------------------------
+def _fmt(v):
+    if v is None:
+        return "missing"
+    if isinstance(v, (int, float)) and not isinstance(v, bool):
+        return f"{v:,.0f}" if abs(v) >= 1000 else f"{v:.4g}"
+    return str(v)
+
+
+def page_borrower():
+    st.title("5 · Borrower view")
+    st.write("What the repair means for one applicant: their risk score and "
+             "decision before and after repair, the decision threshold, the "
+             "features that drove their score, and how their values changed.")
+    if _need_data():
+        return
+    meta = _meta()
+    if st.session_state.demo:
+        rows = E.demo_borrowers(meta["attribute"])
+        if not rows:
+            st.info("No stored example applicants on this computer yet. They are "
+                    "built locally, because they are real Home Credit rows that "
+                    "may not be published: run `python app/build_demo_borrowers.py` "
+                    "(about 12 minutes), then reload this page.")
+            return
+        st.caption("Precomputed examples from the held-out 15,000 applicants of the "
+                   "50,000-row sample, with the iteration-1 full repair. Applicants "
+                   "are identified only by their position in that held-out set.")
+        pick = st.radio("Example applicant", range(len(rows)),
+                        format_func=lambda i: f"{rows[i]['label']} "
+                                              f"(applicant {rows[i]['applicant']})")
+        b = rows[pick]
+    else:
+        res = st.session_state.mitigate
+        if res is None or "live" not in res:
+            st.info("Run **4 · Mitigate** first: this view compares its two models.")
+            st.page_link(PAGES[3], label="Go to 4 · Mitigate", icon="➡️")
+            return
+        idx = E.borrower_index(res["live"]).set_index("applicant", drop=False)
+        n_changed = int(idx.changed.sum())
+        only = st.toggle("Only applicants whose decision the repair changed",
+                         value=n_changed > 0)
+        pool = idx[idx.changed] if only and n_changed else idx
+        st.caption(f"{n_changed} of {len(idx):,} held-out applicants get a different "
+                   f"decision after the {res['mode']} repair.")
+        i = st.selectbox("Applicant (position in the held-out 30%)",
+                         pool.applicant.tolist(),
+                         format_func=lambda j: f"Applicant {j}: "
+                                               f"{idx.at[j, 'before']} → {idx.at[j, 'after']}")
+        b = _cached("borrower", st.session_state.data["key"] + (res["mode"], int(i)),
+                    lambda: E.borrower(res["live"], int(i)))
+
+    st.caption(f"Actual outcome: **{b['actual_outcome']}**.")
+    for col, side, title in zip(st.columns(2), (b["before"], b["after"]),
+                                ("Before repair", "After repair")):
+        with col:
+            st.subheader(title)
+            c1, c2 = st.columns(2)
+            c1.metric("Risk score", f"{side['risk_score']:.3f}", help=G["risk_score"])
+            c2.metric("Decision", side["decision"].capitalize(),
+                      delta=f"threshold {side['threshold']:.3f}", delta_color="off",
+                      delta_arrow="off", help=G["threshold"])
+            drivers = pd.DataFrame(side["drivers"]).assign(
+                value=lambda d: d["value"].map(_fmt))
+            st.dataframe(drivers, hide_index=True, width="stretch", column_config={
+                "feature": st.column_config.TextColumn("top features driving the score"),
+                "push": st.column_config.NumberColumn("push on risk", help=G["push"],
+                                                      format="%+.3f")})
+    st.subheader("Key feature values before and after repair")
+    vals = pd.DataFrame(b["values"])
+    for c in ("value before repair", "value after repair"):
+        vals[c] = vals[c].map(_fmt)
+    st.dataframe(vals, hide_index=True, width="stretch")
+    st.caption("Repair moves each value to the same position in a distribution "
+               "shared by all applicants: numeric features keep their units but "
+               "their values shift, and categories become numeric codes. Missing "
+               "values are filled before repair.")
+
+
+# --------------------------------------------------------------------------
+# 6. report
 # --------------------------------------------------------------------------
 def page_report():
-    st.title("5 · Report")
+    st.title("6 · Report")
     st.write("A plain-language audit report of everything run so far, ready to "
              "file or share.")
     meta = _meta()
@@ -520,7 +678,8 @@ def page_report():
         res = (st.session_state.audit, st.session_state.explain, st.session_state.mitigate)
         if not any(res):
             st.info("Run at least one step (2–4) to include its results.")
-    report = E.build_report(meta, *res)
+    report = E.build_report(meta, *res, lender_res=None if st.session_state.demo
+                            else st.session_state.lender)
     st.download_button("Download report (Markdown)", report, type="primary",
                        file_name=f"proxy_audit_{meta['attribute']}.md",
                        mime="text/markdown")
@@ -533,7 +692,8 @@ PAGES = [
     st.Page(page_audit, title="2 · Leakage audit", url_path="audit"),
     st.Page(page_explain, title="3 · Explain", url_path="explain"),
     st.Page(page_mitigate, title="4 · Mitigate", url_path="mitigate"),
-    st.Page(page_report, title="5 · Report", url_path="report"),
+    st.Page(page_borrower, title="5 · Borrower view", url_path="borrower"),
+    st.Page(page_report, title="6 · Report", url_path="report"),
 ]
 
 _init_state()

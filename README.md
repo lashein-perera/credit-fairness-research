@@ -84,25 +84,35 @@ pytest tests/
 
 ## Dashboard
 
-A Streamlit interface for running an audit without writing code. It is a user interface only: every number comes from the frozen modules under `src/python/` (tag `artefact-v3-final`), called through `app/engine.py`.
+A Streamlit interface for running an audit without writing code. It is a user interface only: every number comes from the frozen modules under `src/python/` (tag `artefact-v4-final`), called through `app/engine.py`.
 
 ```bash
+conda activate creditfair
 streamlit run app/dashboard.py
 ```
 
-The browser opens at <http://localhost:8501>. Work through the five screens in the sidebar:
+The browser opens at <http://localhost:8501>. Work through the six screens in the sidebar:
 
 | Screen | What it does |
 |---|---|
-| 1 · Load data | Pick Home Credit, German Credit or UCI Default, or upload a CSV; choose the outcome column and the protected attribute; sample ~5,000 rows |
+| 1 · Load data | Pick Home Credit, German Credit or UCI Default, or upload a CSV; choose the outcome column and the protected attribute; sample ~5,000 rows. An uploaded CSV may include **your own model's score or decision**: it is kept out of the features, and its approval-rate and error-rate gaps (DP, DI, EO) are shown as "Your model's decisions" |
 | 2 · Leakage audit | Probe AUC with the shuffled-attribute control, and a bar chart of the most revealing features |
 | 3 · Explain | Leakage vs SHAP cross-plot, and the features that are both leaky and relied upon |
-| 4 · Mitigate | Proxy-aware mitigator in full or guarded mode: before/after AUC, DP diff, DI ratio, EO diff and probe AUC, plus any manufactured proxies |
-| 5 · Report | Download a plain-language audit report (Markdown) |
+| 4 · Mitigate | Proxy-aware mitigator in full or guarded mode: before/after AUC, DP diff, DI ratio, EO diff; leakage measured with both the **weak** (logistic) and **strong** (gradient-boosting) probe; manufactured proxies; and, in live mode, a **download of the repaired data** with a note on retraining |
+| 5 · Borrower view | One applicant's risk score and decision before and after repair, the decision threshold, the features driving their score, and their key values before and after repair |
+| 6 · Report | Download a plain-language audit report (Markdown) |
 
 **Demo mode** — the sidebar toggle, or <http://localhost:8501/?demo=1> — shows the precomputed dissertation results from `results/` instantly. Nothing is loaded or trained, so it cannot stall, and it works without the datasets downloaded. Add `&attr=REGION_RATING_CLIENT` or `&mode=full` to open on a particular attribute or mitigation mode.
 
-Live runs take about 5–20 s per step at 5,000 rows on an Apple-silicon laptop; results are cached, so revisiting a screen or re-running with the same settings is instant. Screenshots of each screen are in [`docs/screenshots/`](docs/screenshots/).
+The borrower view's demo examples are real Home Credit applicants, which the data licence does not allow to be published, so they are not in the repository. Build them once on a machine that has the data (about 12 minutes):
+
+```bash
+python app/build_demo_borrowers.py
+```
+
+They are written to `data/demo/`, which git ignores. Without them, every other screen still works in demo mode.
+
+Live runs take about 5–40 s per step at 5,000 rows on an Apple-silicon laptop; results are cached, so revisiting a screen or re-running with the same settings is instant. Screenshots of each screen are in [`docs/screenshots/`](docs/screenshots/).
 
 ## Datasets
 
