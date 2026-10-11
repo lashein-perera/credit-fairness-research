@@ -84,35 +84,51 @@ pytest tests/
 
 ## Dashboard
 
-A Streamlit interface for running an audit without writing code. It is a user interface only: every number comes from the frozen modules under `src/python/` (tag `artefact-v4-final`), called through `app/engine.py`.
+**ProxyLens** is a Streamlit interface for running an audit without writing code. It is a user interface only: every number comes from the frozen modules under `src/python/` (tag `artefact-v4-final`), called through `app/engine.py`.
 
 ```bash
 conda activate creditfair
 streamlit run app/dashboard.py
 ```
 
-The browser opens at <http://localhost:8501>. Work through the six screens in the sidebar:
+The browser opens at <http://localhost:8501> on the start screen, which offers two choices:
 
-| Screen | What it does |
+- **Audit my data**: a single setup screen. Pick a built-in dataset (Home Credit, German Credit, UCI Default of Credit Card Clients) or upload a CSV; choose the outcome column, the protected attribute, optionally **your own model's score or decision**, and any columns to leave out. A "Ready to run?" checklist validates the choices (for example an outcome column that is not binary, or an attribute with more than ten groups) and keeps **Run audit** disabled until they pass. Rows to sample (5,000) and the leakage probe (gradient boosting, the methodology's probe) are under *Advanced settings*.
+- **Explore a sample audit**: the stored dissertation results for the 50,000-row Home Credit sample, read from `results/`. Nothing is loaded or trained, so it opens instantly and works without the datasets downloaded.
+
+**Run audit** runs the leakage audit and then the explanation, with a progress bar for each, and opens the results workspace. A stepper (Data → Audit → Repair → Report) and a summary bar (dataset, rows, features, protected attribute, status) stay at the top; the results are in tabs:
+
+| Tab | What it shows |
 |---|---|
-| 1 · Load data | Pick Home Credit, German Credit or UCI Default, or upload a CSV; choose the outcome column and the protected attribute; sample ~5,000 rows. An uploaded CSV may include **your own model's score or decision**: it is kept out of the features, and its approval-rate and error-rate gaps (DP, DI, EO) are shown as "Your model's decisions" |
-| 2 · Leakage audit | Probe AUC with the shuffled-attribute control, and a bar chart of the most revealing features |
-| 3 · Explain | Leakage vs SHAP cross-plot, and the features that are both leaky and relied upon |
-| 4 · Mitigate | Proxy-aware mitigator in full or guarded mode: before/after AUC, DP diff, DI ratio, EO diff; leakage measured with both the **weak** (logistic) and **strong** (gradient-boosting) probe; manufactured proxies; and, in live mode, a **download of the repaired data** with a note on retraining |
-| 5 · Borrower view | One applicant's risk score and decision before and after repair, the decision threshold, the features driving their score, and their key values before and after repair |
-| 6 · Report | Download a plain-language audit report (Markdown) |
+| Overview | Verdict cards with a text rating (LOW / MODERATE / HIGH / SEVERE, from the probe-AUC bands), what the results mean, and a recommended next action. If a lender score or decision column was uploaded, the fairness of those decisions (approval rate, DP diff, DI ratio, EO diff) |
+| Leakage | Probe AUC with the shuffled-attribute control, and the most revealing features |
+| Explanation | Leakage vs SHAP cross-plot, and the features that are both leaky and relied upon |
+| Repair | What repair does and costs, a choice of full (default) or guarded mode, then **Apply repair**: before/after AUC, DP diff, DI ratio, EO diff; leakage measured with the **weak** (logistic) and **strong** (gradient-boosting) probe; manufactured proxies; and, for your own data, a **download of the repaired data** with a note on retraining |
+| Applicant lookup | One applicant's risk score and decision before and after repair, the decision threshold, the features driving their score, and their key values before and after repair |
+| Report | Preview and download of a plain-language audit report (Markdown) |
 
-**Demo mode** — the sidebar toggle, or <http://localhost:8501/?demo=1> — shows the precomputed dissertation results from `results/` instantly. Nothing is loaded or trained, so it cannot stall, and it works without the datasets downloaded. Add `&attr=REGION_RATING_CLIENT` or `&mode=full` to open on a particular attribute or mitigation mode.
+Each tab ends with a button to the next step. Provenance (which `results/` file or live computation a number comes from) is in each tab's *Data source* expander.
 
-The borrower view's demo examples are real Home Credit applicants, which the data licence does not allow to be published, so they are not in the repository. Build them once on a machine that has the data (about 12 minutes):
+Direct links, used in the dissertation:
+
+| Link | Opens |
+|---|---|
+| <http://localhost:8501/?demo=1> | The sample audit (gender) |
+| `?demo=1&attr=REGION_RATING_CLIENT` | The sample audit for region rating |
+| `?demo=1&mode=full` (or `guarded`) | The sample audit with that repair applied |
+| `?demo=1&tab=Repair` | A particular tab (Overview, Leakage, Explanation, Repair, Applicant+lookup, Report) |
+
+The page addresses of the earlier dashboard (`/audit`, `/explain`, `/mitigate`, `/borrower`, `/report`) redirect to the matching tab.
+
+The applicant lookup's sample examples are real Home Credit applicants, which the data licence does not allow to be published, so they are not in the repository. Build them once on a machine that has the data (about 12 minutes):
 
 ```bash
 python app/build_demo_borrowers.py
 ```
 
-They are written to `data/demo/`, which git ignores. Without them, every other screen still works in demo mode.
+They are written to `data/demo/`, which git ignores. Without them, every other tab still works in the sample audit.
 
-Live runs take about 5–40 s per step at 5,000 rows on an Apple-silicon laptop; results are cached, so revisiting a screen or re-running with the same settings is instant. Screenshots of each screen are in [`docs/screenshots/`](docs/screenshots/).
+On an Apple M1 laptop with 8 GB of memory, at the default 5,000 Home Credit rows, every step finishes in under a minute (measured for both attributes): loading 4–5 s, leakage audit 20–28 s, explanation 6–7 s, full repair 33–40 s, guarded repair 28–52 s, repaired-data export 12–16 s; the report and an applicant lookup take under a second. Results are cached, so revisiting a tab or re-running with the same settings is instant. Screenshots of each screen are in [`docs/screenshots/`](docs/screenshots/).
 
 ## Datasets
 

@@ -1,5 +1,5 @@
 [server]
-# the project lives in an iCloud-synced folder; polling it for edits is not needed
+# code edits take effect after a restart, so the app never reloads mid-audit
 fileWatcherType = "none"
 
 [browser]
@@ -7,6 +7,14 @@ gatherUsageStats = false
 
 [theme]
 base = "light"
+primaryColor = "#1E40AF"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F3F5F9"
+textColor = "#0F172A"
+borderColor = "#E2E8F0"
+showWidgetBorder = true
+baseRadius = "medium"
+linkColor = "#1E40AF"
 
 [client]
 # hide the developer menu and Deploy button from compliance users
