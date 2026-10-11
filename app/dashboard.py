@@ -1367,6 +1367,8 @@ def tab_report():
         meta["source"] = "; ".join(E.DEMO_SOURCE.values())
     report = E.build_report(meta, audit, explain, mit,
                             lender_res=None if ss.demo else ss.lender)
+    # the engine's report names the research repository; the product is ProxyLens
+    report = report.replace("by the credit-fairness-research dashboard", f"by {APP}")
     st.markdown("A plain-language audit report of everything run so far, ready to "
                 "file or share.")
     st.download_button("Download report (Markdown)", report, type="primary",
