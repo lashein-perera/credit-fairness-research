@@ -31,46 +31,61 @@ Established bias-mitigation methods were developed and benchmarked on datasets w
 ## Architecture
 
 ```
-┌───────────────────────────────────────────────────────┐
-│  Java Spring Boot — Fairness Audit Service            │
-│  REST API · scoring · audit report · explanations     │
-└───────────────┬───────────────────────────────────────┘
-                │
-┌───────────────▼───────────────────────────────────────┐
-│  Python ML core                                        │
-│  1. Proxy Leakage Detector   src/python/leakage        │
-│  2. Credit Models            src/python/models         │
-│  3. Mitigation Bank          src/python/mitigation     │
-│  4. Proxy-Aware Mitigator    src/python/mitigation     │
-│  5. Explainability (SHAP)    src/python/explain        │
-│  6. Evaluation Harness       src/python/evaluation     │
-└────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│  ProxyLens — Streamlit dashboard        app/dashboard.py │
+│  start · setup · run · results tabs · report download    │
+└───────────────┬──────────────────────────────────────────┘
+                │  presentation only
+┌───────────────▼──────────────────────────────────────────┐
+│  Computation layer                      app/engine.py    │
+│  sequences the modules; reads results/ for the sample    │
+└───────────────┬──────────────────────────────────────────┘
+                │  calls them unchanged
+┌───────────────▼──────────────────────────────────────────┐
+│  Python modules (frozen at artefact-v4-final)            │
+│  1. Proxy Leakage Detector   src/python/leakage          │
+│  2. Credit Models            src/python/models           │
+│  3. Mitigation Bank          src/python/mitigation       │
+│  4. Proxy-Aware Mitigator    src/python/mitigation       │
+│  5. Explainability (SHAP)    src/python/explain          │
+│  6. Evaluation Harness       src/python/evaluation       │
+│     Data loaders             src/python/data             │
+└───────────────┬──────────────────────────────────────────┘
+                │  experiment scripts (run_*.py)
+┌───────────────▼──────────────────────────────────────────┐
+│  results/   frozen result tables and figures             │
+│             (read back by the dashboard's sample audit)  │
+└──────────────────────────────────────────────────────────┘
 ```
+
+`src/java/audit-service/` is an **unused early skeleton** from the project's first week: a Spring Boot REST service whose endpoints were never implemented. The artefact does not use it; the dashboard took its place.
 
 ## Repository Layout
 
 | Path | Contents |
 |---|---|
+| `app/` | ProxyLens dashboard (`dashboard.py`), its computation layer (`engine.py`) and the sample-applicant builder |
 | `src/python/data/` | Loaders and the preprocessing pipeline |
 | `src/python/leakage/` | Probe classifiers measuring protected-attribute leakage |
 | `src/python/models/` | Baseline credit-scoring models |
 | `src/python/mitigation/` | Established mitigation methods and the proxy-aware mitigator |
 | `src/python/explain/` | SHAP explainability layer |
 | `src/python/evaluation/` | Metrics and the experiment harness |
-| `src/java/audit-service/` | Spring Boot REST service and dashboard |
-| `notebooks/` | Exploratory analysis only |
+| `run_*.py` | Experiment scripts that produce the tables in `results/` |
 | `results/` | Result tables and publication figures |
-| `docs/` | Dissertation drafts |
 | `tests/` | Unit tests, including protected-attribute isolation |
+| `docs/screenshots/` | Screenshots of each dashboard screen, used in Chapter 4 |
+| `notebooks/` | Exploratory analysis only |
 | `data/` | Datasets — **not committed**, see `data/README.md` |
+| `src/java/audit-service/` | Unused early skeleton (Spring Boot stubs, never implemented); not part of the artefact |
 
 ---
 
 ## Setup
 
 ```bash
-python -m venv venv
-source venv/bin/activate          # Windows: venv\Scripts\activate
+conda create -n creditfair python=3.11
+conda activate creditfair
 pip install -r requirements.txt
 ```
 
@@ -144,7 +159,7 @@ The protected attribute is **withheld from every model** and retained **for eval
 
 ## Status
 
-Project in progress. Target completion: 1 October 2026.
+Complete. Final release `artefact-v4-ui2-r1` (dashboard); results frozen at `artefact-v4-final`.
 
 ## Licence
 

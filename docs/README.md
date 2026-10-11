@@ -2,6 +2,6 @@
 
 | Path | Contents |
 |---|---|
-| `drafts/` | Dissertation chapter drafts |
+| `screenshots/` | Screenshots of each ProxyLens dashboard screen, used in Chapter 4 |
 
-The submitted dissertation and the CW1 research paper are kept here for version history.
+Dissertation chapters are not kept in this repository.
