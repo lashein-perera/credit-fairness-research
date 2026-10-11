@@ -12,6 +12,8 @@ Recorded here for evaluation use only. These columns are **removed before model 
 
 | Dataset | Protected attribute columns |
 |---|---|
-| Home Credit | `CODE_GENDER`, `REGION_RATING_CLIENT`, `REGION_RATING_CLIENT_W_CITY` |
-| German Credit | personal status / sex attribute, age |
-| UCI Default | `SEX`, `EDUCATION`, `MARRIAGE` |
+| Home Credit | `CODE_GENDER`, `REGION_RATING_CLIENT`, `REGION_RATING_CLIENT_W_CITY`, `REGION_POPULATION_RELATIVE` |
+| German Credit | `sex`, `personal_status_sex`, `age_group`, `age` |
+| UCI Default | `SEX`, `MARRIAGE` (`EDUCATION` stays a feature) |
+
+Protected attributes used in the evaluation: Home Credit — CODE_GENDER and REGION_RATING_CLIENT; German Credit and UCI Default — sex.
