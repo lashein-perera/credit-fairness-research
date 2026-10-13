@@ -1,0 +1,31 @@
+# pytest -v tests/   run 2026-10-13 11:22 +0530 on commit e60008f (tree identical to artefact-v4-ui2-r1 for src/, app/, tests/)
+# The 9 tests are all in tests/test_protected_attribute_isolation.py (3 tests x 3 datasets).
+# tests/test_mitigation_bank.py and tests/test_proxy_aware.py contain no test functions:
+# they are demonstration scripts that pytest imports (and so runs) without error, but they
+# assert nothing and are not counted.
+
+============================= test session starts ==============================
+platform darwin -- Python 3.11.15, pytest-9.1.1, pluggy-1.6.0 -- /opt/anaconda3/envs/creditfair/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/lasheinperera/dev/credit-fairness-research
+plugins: anyio-4.14.2
+collecting ... collected 9 items
+
+tests/test_protected_attribute_isolation.py::test_protected_columns_absent_from_features[home_credit] PASSED [ 11%]
+tests/test_protected_attribute_isolation.py::test_protected_columns_absent_from_features[german_credit] PASSED [ 22%]
+tests/test_protected_attribute_isolation.py::test_protected_columns_absent_from_features[uci_default] PASSED [ 33%]
+tests/test_protected_attribute_isolation.py::test_protected_frame_is_populated[home_credit] PASSED [ 44%]
+tests/test_protected_attribute_isolation.py::test_protected_frame_is_populated[german_credit] PASSED [ 55%]
+tests/test_protected_attribute_isolation.py::test_protected_frame_is_populated[uci_default] PASSED [ 66%]
+tests/test_protected_attribute_isolation.py::test_row_alignment[home_credit] PASSED [ 77%]
+tests/test_protected_attribute_isolation.py::test_row_alignment[german_credit] PASSED [ 88%]
+tests/test_protected_attribute_isolation.py::test_row_alignment[uci_default] PASSED [100%]
+
+=============================== warnings summary ===============================
+src/python/models/baselines.py:27: 45 warnings
+  /Users/lasheinperera/dev/credit-fairness-research/src/python/models/baselines.py:27: Pandas4Warning: For backward compatibility, 'str' dtypes are included by select_dtypes when 'object' dtype is specified. This behavior is deprecated and will be removed in a future version. Explicitly pass 'str' to `include` to select them, or to `exclude` to remove them and silence this warning.
+  See https://pandas.pydata.org/docs/user_guide/migration-3-strings.html#string-migration-select-dtypes for details on how to write code that works with pandas 2 and 3.
+    cat = X.select_dtypes(include=["object", "category", "bool"]).columns.tolist()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================= 9 passed, 45 warnings in 22.06s ========================

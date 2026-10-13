@@ -1,0 +1,131 @@
+ProxyLens dashboard - browser click-through checks
+===================================================
+
+Run:        2026-10-11, 13:44-13:50 (+05:30), final clean run (log below, verbatim)
+Code:       the dashboard released as artefact-v4-ui2 (commit 3a4730d; app/, src/ and
+            results/ identical to the run's working copy). artefact-v4-ui2-r1 changes
+            only the report header line, checked separately (addendum B).
+Machine:    Apple M1, 8 GB RAM, macOS 26.2, Python 3.11.15, Streamlit 1.65.0,
+            headless Google Chrome
+Method:     The dashboard ran locally (streamlit run app/dashboard.py, port 8502). A
+            script drove headless Chrome through the Chrome DevTools protocol: it opened
+            pages, clicked buttons, chose options, uploaded a file, downloaded files, and
+            compared the page text and the downloaded files with expected values. For
+            "Sample audit values match results/" the expected numbers were read directly
+            from the CSV files in results/ with pandas, not through the dashboard's code.
+Upload:     german_with_lender_score.csv (not committed): the German Credit loader's data
+            (outcome, sex, 18 features, age) plus a stand-in lender score, a logistic
+            regression fitted on the same features. 1,000 rows x 22 columns.
+Result:     31 of 31 checks passed.
+
+The 13 acceptance checks and the log lines that cover them
+-----------------------------------------------------------
+ 1. Load the built-in sample (Home Credit)
+      Built-in sample loads at 5,000 rows with 116 features
+      Load and audit + explanation run (Home Credit, 5,000 rows)
+ 2. Load German Credit and Default of Credit Card Clients
+      Load and audit + explanation run (German Credit)        + Repair full (German Credit)
+      Load and audit + explanation run (UCI Default, 5,000 rows) + Repair full (UCI Default)
+ 3. Upload a CSV (attribute and left-out columns removed)
+      Valid upload passes the checklist
+      Upload a CSV: attribute, lender column and left-out columns removed
+ 4. Setup checklist blocks invalid choices
+      Setup checklist blocks invalid choice: continuous outcome / attribute with 33
+      groups / non-numeric score column  (Run audit disabled in all three)
+ 5. Leakage audit and explanation run
+      the three "Load and audit + explanation run" lines, and the upload run
+ 6. Repair, full and guarded
+      Repair full / Repair guarded (Home Credit, live); Repair full (German, UCI)
+ 7. Guarded mode undoes the round on German Credit and explains it
+      Guarded mode undoes the round on German Credit and explains it
+      Guarded mode undoes the round on the German upload and explains it
+ 8. Sample audit values match the stored results
+      Sample audit values match results/ (4 lines: 62 of 62 stored values found)
+      07_repair shows weak 0.771->0.555 and strong 0.875->0.795 (gender, full)
+ 9. Report downloads
+      Report downloads (sample audit) / (live); Report includes the lender's decisions
+10. Lender score column shows DP / DI / EO
+      Lender score column shows DP/DI/EO
+11. Applicant lookup (sample and live)
+      Applicant lookup (sample) / (live) / (live, upload)
+12. Repaired-data export
+      Repaired-data export
+13. Core modules and results unchanged versus artefact-v4-final
+      checked with git, not the browser: addendum A
+Also checked: start screen offers both choices; ?demo=1 opens the sample audit; the
+earlier page address /mitigate?demo=1 redirects to the Repair tab.
+
+Log (verbatim; "== part done in N s" lines give each part's wall-clock time)
+-----------------------------------------------------------------------------
+== sample
+PASS Start screen offers both choices | 01_start.png
+PASS Sample audit values match results/ (CODE_GENDER, full) | 16/16 stored values found
+PASS Sample audit values match results/ (CODE_GENDER, guarded) | 15/15 stored values found
+PASS Sample audit values match results/ (REGION_RATING_CLIENT, full) | 16/16 stored values found
+PASS Sample audit values match results/ (REGION_RATING_CLIENT, guarded) | 15/15 stored values found
+PASS 07_repair shows weak 0.771→0.555 and strong 0.875→0.795 (gender, full) | 07_repair.png
+PASS Applicant lookup (sample) | stored example applicants shown
+PASS Report downloads (sample audit) | proxylens_audit_CODE_GENDER.md, 5,939 chars
+PASS Old address /mitigate?demo=1 redirects to the Repair tab | http://localhost:8502/results?demo=1&tab=Repair
+PASS ?demo=1 opens the sample audit | http://localhost:8502/results?demo=1
+== sample done in 95 s
+== upload
+PASS Setup checklist blocks invalid choice: continuous outcome | Run audit disabled=True
+PASS Setup checklist blocks invalid choice: attribute with 33 groups | Run audit disabled=True
+PASS Setup checklist blocks invalid choice: non-numeric score column | Run audit disabled=True
+PASS Valid upload passes the checklist | 18 features after removing sex, age, lender_score
+PASS Upload a CSV: attribute, lender column and left-out columns removed | summary bar shows 18 features
+PASS Lender score column shows DP/DI/EO | DI ratio 0.935 (pass ≥ 0.80) · DP diff 0.047 · EO diff 0.048.
+PASS Repaired-data export | repaired_sex_full.zip: 1000 rows × 19 columns; removed columns present: none
+PASS Guarded mode undoes the round on the German upload and explains it | 6 s
+PASS Applicant lookup (live, upload) | guarded mode
+PASS Report includes the lender's decisions | proxylens_audit_sex.md
+== upload done in 108 s
+== german
+PASS Load and audit + explanation run (German Credit) | audit + explanation in 7 s; DATASET German Credit ROWS 1,000 FEATURES 18 PROTECTED ATTRIBUTE Sex (sex)
+PASS Guarded mode undoes the round on German Credit and explains it | No feature was repaired, so the model is unchanged. The first repair round cost more accuracy than this mode allows, and was rolled back.
+PASS Repair full (German Credit) | 6 s
+== german done in 38 s
+== homecredit
+PASS Load and audit + explanation run (Home Credit, 5,000 rows) | audit + explanation in 26 s; DATASET Home Credit (sample) ROWS 5,000 FEATURES 116 PROTECTED ATTRIBUTE Gender (CODE_GENDER)
+PASS Built-in sample loads at 5,000 rows with 116 features | summary bar
+PASS Repair full (Home Credit, live) | 46 s in the dashboard
+PASS Repair guarded (Home Credit, live) | 26 s in the dashboard
+PASS Applicant lookup (live) | 114 of 1,500 held-out applicants get a different decision after the guarded repair.
+PASS Report downloads (live) | proxylens_audit_CODE_GENDER.md
+== homecredit done in 122 s
+== uci
+PASS Load and audit + explanation run (UCI Default, 5,000 rows) | audit + explanation in 6 s; DATASET UCI Default of Credit Card Clients ROWS 5,000 FEATURES 21 PROTECTED ATTRIBUTE Sex (SEX)
+PASS Repair full (UCI Default) | 9 s
+== uci done in 31 s
+
+Addendum A - check 13, modules and results unchanged (git; re-run 2026-10-13)
+-----------------------------------------------------------------------------
+$ git diff --stat artefact-v4-final artefact-v4-ui2-r1 -- src results tests
+(no output: no file in src/, results/ or tests/ differs between the two releases)
+Since artefact-v4-ui2-r1, main has added one new file, results/thin_file_check.csv
+(2026-10-12); no existing results file has changed.
+
+Addendum B - report header, artefact-v4-ui2-r1 (2026-10-11, afternoon)
+---------------------------------------------------------------------
+sample | preview:  Generated 2026-10-11 by ProxyLens (artefact-v4-final modules).
+sample | download: Generated 2026-10-11 by ProxyLens (artefact-v4-final modules).
+old string present anywhere: False
+live German | download: Generated 2026-10-11 by ProxyLens (artefact-v4-final modules). | old string present: False
+
+Addendum C - earlier run the same day (13:35-13:43), before the final run
+-------------------------------------------------------------------------
+31 checks, 27 passed, 4 failed. All 4 failures were faults in the test script, not
+in the dashboard; the script was corrected and every check was repeated in the
+final run above.
+  FAIL Load and audit + explanation run (German Credit) | audit + explanation in 7 s; DATASET German Credit ROWS 1,000 FEATURES 18 PROTECTED ATTRIBUTE Sex (sex) 
+  FAIL Load and audit + explanation run (Home Credit, 5,000 rows) | audit + explanation in 19 s; DATASET Home Credit (sample) ROWS 5,000 FEATURES 116 PROTECTED ATTRIBUTE Gender (CODE_GENDER) 
+  FAIL Report downloads (live) | (no file detected)
+  FAIL Load and audit + explanation run (UCI Default, 5,000 rows) | audit + explanation in 6 s; DATASET UCI Default of Credit Card Clients ROWS 5,000 FEATURES 21 PROTECTED ATTRIBUTE Sex (SEX) 
+  Cause of the three "Load and audit + explanation run" failures: the script looked
+  for the card title "Model reliance", but the page shows it in capitals ("MODEL
+  RELIANCE"); the page itself had reached the results, as the evidence column shows.
+  Cause of "Report downloads (live)": the live report has the same file name as the
+  sample report downloaded earlier, Chrome overwrote that file, and the script only
+  looked for new file names. The overwritten file held the live report (it contained
+  "## 3. Mitigation (guarded)").
